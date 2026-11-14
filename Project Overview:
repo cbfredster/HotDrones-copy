@@ -43,7 +43,7 @@ Drones:
 
 Drones start from a home base and go to collect water from water sources (e.g. river pond reservoir)
 
-When the drones can communicate they make interlinked decisions about how to most effectively as a group extinguish the fire (can define number of drones to start with)
+When the drones can communicate they make interlinked decisions about how to most effectively as a group extinguish the fire (can define number of drones to start with in a line)
 
 However sometimes they cannot communicate with each other:
 
@@ -64,3 +64,18 @@ When drones are in range of base/ go to recharge, they share their map so that t
 In the case that a drone has a fire map with no fire on it , it goes back to homebase to get the firemaps from them
 
 Drones can share their maps of the fire, the more recent one is taken to be more accurate.
+
+
+infrastrcutyre:
+protected assets (village/building)
+
+end condition:
+asset lost?
+fire is put out?
+
+
+potential drone algos:
+consesnus based bundle algorithm
+
+start with: all drones are connected (i.e all connected via graph, edges and nodes for drones and distance between each other, and those too far are given weights above threshold,
+constantlu upated, maybe okay model for distribtued drone netowrk, alterantie better options can replace this. but initially keep them on graph but their motion is just random movement as placehodler)
