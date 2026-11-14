@@ -132,3 +132,57 @@ byte (passed: 25 of 25 conditions identical). Anything new must add its off-valu
   regrown tiles for 360 ticks; ▲ / ▼ on a drone's label while it pays the climb / descent cost; smoke puffs
   that are wisps over lone fires.
 - Root `results/` still holds the original (legacy-default) numbers; they are regenerated in step 6.
+
+## Step 4 — sponsor and MLH integrations
+
+Everything is outside `src/sim/`. The one sim-side addition is `src/sim/judge.ts` (`applyJudgeAction` plus the
+recorded action log), which is the single write path the ground rules ask for.
+
+- **Layout.** `server/` is a small Node + TypeScript server (HTTP API and a WebSocket at `/ws`). `npm run dev`
+  starts it next to Vite, which proxies `/api` and `/ws`; `npm run build && npm start` serves `dist/` from the
+  same process. `src/integrations/` is the browser side. `main.ts` calls four hooks (`onRun`, `afterTick`,
+  `afterJudge`, `frame`) and nothing else.
+- **One event stream** (`src/integrations/events.ts`), derived by diffing world state after each tick: run
+  started/finished, fire spotted *on the base's map*, drone state changes, crashes (with cause), water drops,
+  links lost and regained (to the base, and to everyone), network split and healed, base offline/online, tower
+  lost, village threatened/lost, fire out, judge actions. It only reads the world and has no DOM or network
+  imports, so the server and the experiment runner use the same code.
+- **Everything is optional.** Keys live in a gitignored `.env` (`.env.example` is committed) and only the server
+  reads them. An integration with no key switches itself off, the header shows a status dot for each, and the
+  browser falls back: built-in sitreps and a small command parser instead of Gemini; pre-generated clips, then
+  the browser's own speech, and synthesised effects instead of ElevenLabs; a local JSON file instead of
+  MongoDB; server memory instead of Tiger Data. `npm run test:integrations` runs the whole thing end to end
+  with no keys at all.
+- **No network call blocks a tick.** `src/integrations/api.ts` never throws: a failed call resolves to null.
+  Telemetry is batched to the server about once a second.
+- **Tiger Data** (`server/tiger.ts`, `server/sql/schema.sql`): hypertables `drone_telemetry`, `fire_metrics` and
+  `events`, with `time = run start + tick seconds` so `time_bucket` works for live and experiment runs alike;
+  continuous aggregates, a columnstore policy and a retention policy. `dashboard.html` reads only the
+  aggregates. The schema also runs on plain Postgres (views stand in for the aggregates), which is how the tests
+  exercise it (PGlite) without a Tiger account. **Not yet run against a real Tiger Cloud service.**
+- **Gemini commander** (`server/gemini.ts`, `src/integrations/commander.ts`, `baseKnowledge.ts`): it is given
+  only the base's picture: zones from `computeZones` on the base's belief map, the drones in the base's comms
+  group now, and the last status heard from the rest. Every sitrep is labelled with how stale that picture is.
+  Commands use function calling, mapped onto judge actions, and each one waits behind a confirm chip. It never
+  steers a drone. The model is `GEMINI_MODEL`, defaulting to `gemini-flash-latest` rather than a pinned version
+  name, so it keeps working when the Flash model is renamed. **Not yet run with a real key.**
+- **Audio.** Radio voices play one at a time through a band-pass and squelch filter. The score crossfades calm /
+  tense / critical stems with the threat level. The swarm composition (`audio/swarm.ts`): each drone is a voice
+  pitched by its id on a minor pentatonic scale; drones that can reach each other share a clock; a cut-off group
+  keeps its own clock, drifts and detunes, and snaps back with a chime when it reconnects; fire drives the
+  percussion. Sound starts only after the Sound button, because browsers require a user gesture.
+- **Scenarios** (`server/store.ts`, `server/challenge.ts`): seed + config + recorded judge actions replay a run
+  exactly (checked in the integration test). Saving gives a `?scenario=<id>` link and queues a headless run in
+  every mode for the "Challenge the swarm" board (`board.html`), ranked by how badly the swarm did. Saved config
+  is sanitised on the server (map size and tick limit cannot be changed) so a saved scenario cannot stall it.
+- **Experiment runner.** `--workers N` runs the sweep on worker threads; rows are written in sweep order, so the
+  files are byte-identical to a single-threaded run (checked against the legacy results). `--db` streams each
+  run into Tiger Data, one `fire_metrics` row per 10 ticks and drone telemetry every 50.
+- **Vultr.** `Dockerfile`, `docker-compose.yml` (app + Caddy for HTTPS, and an on-demand `sweep` service) and
+  `docs/deploy-vultr.md`. **Written but not built or deployed here** (no Docker in the cloud session).
+- **`npm run audio:generate`** writes ElevenLabs sound effects, music stems and per-drone radio calls to
+  `public/audio/` with a manifest, to be committed. **Not run: it needs `ELEVENLABS_API_KEY`.** Until it is,
+  `public/audio/manifest.json` is empty and every sound is synthesised in the browser.
+- **Not done in step 4:** Solana (step 4 has no Solana item; step 6 lists it as a prize) and Entire checkpoints
+  for this part of the work (the `entire` CLI was not present in this session, and the agent guide says not to
+  install tools automatically).

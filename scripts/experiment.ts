@@ -4,66 +4,117 @@
 //   results/summary.csv  averages per condition
 //   results/report.html  charts for the pitch
 //
-// Usage: npm run experiment -- [seeds=30] [--legacy] [--out <dir>]
-//   --legacy   switch off everything added since the 2D version (legacyConfig). The output
-//              must then match BASIC/results/summary.csv exactly: `npm run experiment:legacy-check`.
-//   --out      where to write (default: results, or results/legacy with --legacy)
+// Usage: npm run experiment -- [seeds=30] [--legacy] [--out <dir>] [--workers N] [--db]
+//   --legacy     switch off everything added since the 2D version (legacyConfig). The output
+//                must then match BASIC/results/summary.csv exactly: `npm run experiment:legacy-check`.
+//   --out        where to write (default: results, or results/legacy with --legacy)
+//   --workers N  run on N worker threads (the files written are identical to a single-threaded run)
+//   --db         also stream every run into Tiger Data (TIGER_DATABASE_URL in .env), downsampled
+//                to one row every 10 ticks, so dashboard.html fills in while the sweep runs
+import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { Mode, legacyConfig } from "../src/sim/config";
-import { World } from "../src/sim/world";
+import { availableParallelism } from "node:os";
+import { Worker } from "node:worker_threads";
+import type { RunInfo } from "../src/integrations/events";
+import { Mode, legacyConfig, type Config } from "../src/sim/config";
+import { runJob, type Job, type JobResult, type Row } from "./experiment-job";
 
 const args = process.argv.slice(2);
 const flag = (name: string) => args.includes(name);
 const option = (name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
 const LEGACY = flag("--legacy");
 const OUT = option("--out") ?? (LEGACY ? "results/legacy" : "results");
-const SEEDS = Number(args.find((a, i) => /^\d+$/.test(a) && args[i - 1] !== "--out")) || 30;
-const BASE_CFG = LEGACY ? legacyConfig : {};
+const SEEDS = Number(args.find((a, i) => /^\d+$/.test(a) && args[i - 1] !== "--out" && args[i - 1] !== "--workers")) || 30;
+const WORKERS = flag("--workers") ? Math.max(1, Math.min(64, Number(option("--workers")) || availableParallelism())) : 1;
+const DB = flag("--db");
+const DB_SAMPLE_EVERY = 10; // ticks between telemetry rows sent to the database
+const BASE_CFG: Partial<Config> = LEGACY ? legacyConfig : {};
 const MODES: Mode[] = ["swarm", "central", "greedy"];
 const RANGES = [6, 8, 11, 14, 20, 30, 200];
 
-interface Row {
-  experiment: string;
-  mode: string;
-  commsRange: number;
-  seed: number;
-  burnt: number;
-  villageLost: number;
-  dronesLost: number;
-  extinguishedAt: number;
-  ticks: number;
+// ------------------------------------------------------------------ the sweep, as a list of jobs
+const jobs: Job[] = [];
+const add = (experiment: string, mode: Mode | "none", seed: number, extra: Partial<Config>) => jobs.push({ index: jobs.length, experiment, mode, seed, extra });
+// Experiment 1: how does each approach cope as comms get worse?
+for (const range of RANGES) for (const mode of MODES) for (let s = 1; s <= SEEDS; s++) add("range", mode, s, { commsRange: range, baseCommsRange: Math.max(range, 12) * 1.4 });
+// Experiment 2: base goes offline shortly after the drones launch.
+for (const mode of MODES) for (let s = 1; s <= SEEDS; s++) add("baseOutage", mode, s, { baseOutageAt: 120 });
+// Reference: no drones at all.
+for (let s = 1; s <= SEEDS; s++) add("noDrones", "none", s, {});
+
+// ------------------------------------------------------------------ optional: stream into Tiger Data
+const sweepId = `sweep-${new Date().toISOString().replace(/[-:]/g, "").slice(0, 15)}`;
+let tiger: import("../server/tiger").Tiger | null = null;
+if (DB) {
+  const { env } = await import("../server/env");
+  const { Tiger } = await import("../server/tiger");
+  tiger = await Tiger.connect(env.tigerUrl);
+  if (!tiger?.ready) {
+    console.error(tiger ? `--db: could not use the database (${tiger.lastError})` : "--db: set TIGER_DATABASE_URL in .env first (see .env.example)");
+    process.exit(1);
+  }
+  console.log(`--db: streaming to ${tiger.status().detail}; sweep id ${sweepId}`);
+}
+let dbChain: Promise<void> = Promise.resolve();
+function store(job: Job, r: JobResult) {
+  const t = tiger;
+  if (!t) return;
+  const samples = r.samples;
+  r.samples = []; // taken now, so the results array does not hold every run's telemetry
+  const run: RunInfo = { runId: randomUUID(), startedAt: Date.now(), source: "experiment", experiment: job.experiment, sweepId, seed: job.seed, mode: job.mode, commsRange: r.row.commsRange, drones: r.drones, config: job.extra };
+  dbChain = dbChain
+    .then(async () => {
+      await t.startRun(run);
+      await t.insertSamples(run.runId, run.startedAt, samples);
+      await t.finishRun(run, { ticks: r.row.ticks, burnt: r.row.burnt, villageLost: !!r.row.villageLost, dronesLost: r.row.dronesLost, waterDropped: r.waterDropped, extinguishedAt: r.row.extinguishedAt });
+    })
+    .catch((e) => console.warn("--db: write failed:", e.message));
 }
 
-const rows: Row[] = [];
-function run(experiment: string, mode: Mode | "none", seed: number, extra: Record<string, number | boolean>) {
-  const w = new World({ ...BASE_CFG, seed, mode: mode === "none" ? "swarm" : mode, ...(mode === "none" ? { droneCount: 0 } : {}), ...extra });
-  const m = w.runToEnd();
-  rows.push({
-    experiment,
-    mode,
-    commsRange: w.cfg.commsRange,
-    seed,
-    burnt: m.burnt,
-    villageLost: m.villageLost ? 1 : 0,
-    dronesLost: m.dronesLost,
-    extinguishedAt: m.extinguishedAt,
-    ticks: m.tick,
+// ------------------------------------------------------------------ run them
+const t0 = Date.now();
+const results: JobResult[] = new Array(jobs.length);
+const sampleEvery = DB ? DB_SAMPLE_EVERY : 0;
+let done = 0;
+const progress = () => {
+  if (done % Math.max(1, Math.round(jobs.length / 10)) === 0 || done === jobs.length) process.stdout.write(`${done}/${jobs.length} runs (${((Date.now() - t0) / 1000).toFixed(0)}s)\n`);
+};
+if (WORKERS <= 1) {
+  for (const job of jobs) {
+    results[job.index] = runJob(job, BASE_CFG, sampleEvery);
+    store(job, results[job.index]);
+    done++;
+    progress();
+    if (DB) await dbChain; // keep memory flat: do not run ahead of the database
+  }
+} else {
+  console.log(`running on ${WORKERS} worker threads`);
+  let next = 0;
+  await new Promise<void>((resolve, reject) => {
+    for (let k = 0; k < Math.min(WORKERS, jobs.length); k++) {
+      const worker = new Worker(new URL("./experiment-worker.ts", import.meta.url), { workerData: { baseCfg: BASE_CFG, sampleEvery } });
+      const feed = () => (next < jobs.length ? worker.postMessage(jobs[next++]) : void worker.terminate());
+      worker.on("message", (r: JobResult) => {
+        results[r.index] = r;
+        store(jobs[r.index], r);
+        done++;
+        progress();
+        if (done === jobs.length) resolve();
+        feed();
+      });
+      worker.on("error", reject);
+      feed();
+    }
   });
 }
-
-const t0 = Date.now();
-// Experiment 1: how does each approach cope as comms get worse?
-for (const range of RANGES) {
-  for (const mode of MODES) {
-    for (let s = 1; s <= SEEDS; s++) run("range", mode, s, { commsRange: range, baseCommsRange: Math.max(range, 12) * 1.4 });
-  }
-  process.stdout.write(`range ${range} done (${((Date.now() - t0) / 1000).toFixed(0)}s)\n`);
-}
-// Experiment 2: base goes offline shortly after the drones launch.
-for (const mode of MODES) for (let s = 1; s <= SEEDS; s++) run("baseOutage", mode, s, { baseOutageAt: 120 });
-// Reference: no drones at all.
-for (let s = 1; s <= SEEDS; s++) run("noDrones", "none", s, {});
+// Rows in sweep order, whatever order the workers finished in: the files are byte-identical.
+const rows: Row[] = results.map((r) => r.row);
 process.stdout.write(`all runs done (${((Date.now() - t0) / 1000).toFixed(0)}s)\n`);
+if (tiger) {
+  await dbChain;
+  await tiger.close();
+  console.log(`--db: ${jobs.length} runs stored under sweep ${sweepId}`);
+}
 
 // ------------------------------------------------------------------ summarise
 mkdirSync(OUT, { recursive: true });

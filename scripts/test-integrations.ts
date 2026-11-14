@@ -89,7 +89,7 @@ try {
   await sleep(db ? 1500 : 100);
   const dash = await get("/api/dashboard/live");
   check("dashboard: live run comes back in 10-tick buckets", dash.run?.run_id === run.runId && dash.fire.length >= 20 && dash.swarm.length >= 20, `${dash.fire.length} buckets from ${dash.source}`);
-  check("dashboard: battery spread is sane", dash.swarm.every((s: any) => s.battery_min <= s.battery_avg && s.battery_avg <= s.battery_max && s.battery_max <= 1.001));
+  check("dashboard: battery spread is sane", dash.swarm.every((s: any) => s.battery_min <= s.battery_avg + 1e-9 && s.battery_avg <= s.battery_max + 1e-9 && s.battery_max <= 1.001));
   if (db) {
     const sweep = "test-" + Date.now();
     for (const mode of ["swarm", "central"]) {

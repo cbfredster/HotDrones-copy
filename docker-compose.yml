@@ -1,0 +1,51 @@
+# HotDrones behind HTTPS (Caddy gets and renews the certificate by itself).
+#
+#   DOMAIN=hotdrones.example.com docker compose up -d --build
+#
+# Without DOMAIN it serves plain HTTP on port 80, which is fine for a first check by IP.
+# A big experiment sweep on the same machine, streaming into Tiger Data:
+#
+#   SEEDS=300 WORKERS=16 docker compose run --rm sweep
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PORT: "8787"
+    volumes:
+      - hotdrones-data:/app/data
+    expose:
+      - "8787"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [app]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-:80}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+  # Not started by `up`: run on demand with `docker compose run --rm sweep`.
+  sweep:
+    build: .
+    profiles: ["sweep"]
+    env_file:
+      - path: .env
+        required: false
+    command: ["sh", "-c", "npx tsx scripts/experiment.ts ${SEEDS:-300} --workers ${WORKERS:-8} --db --out /app/data/results"]
+    volumes:
+      - hotdrones-data:/app/data
+
+volumes:
+  hotdrones-data:
+  caddy-data:
+  caddy-config:
