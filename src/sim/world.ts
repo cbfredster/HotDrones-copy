@@ -1,11 +1,12 @@
 import { BeliefMap, mergeGroup } from "./belief";
-import { BASE_ID, Blackout, CommsNode, Network, buildNetwork, terrainHeightAt } from "./comms";
+import { BASE_ID, BASE_MAST_HEIGHT, Blackout, CommsNode, Network, buildNetwork, terrainHeightAt, towerNodeId } from "./comms";
 import { Config, defaultConfig } from "./config";
 import { Drone } from "./drone";
 import { Environment, Fire } from "./environment";
+import type { RecordedAction } from "./judge";
 import { Claim, Zone, computeZones } from "./planner";
 import { Rng } from "./rng";
-import { Terrain, Tile, generateTerrain } from "./terrain";
+import { Terrain, Tile, generateTerrain, pickTowerSites } from "./terrain";
 import { TeammateTracker } from "./tracker";
 
 export interface Metrics {
@@ -20,6 +21,14 @@ export interface Metrics {
   extinguishedAt: number; // tick the last fire went out, -1 if not yet
 }
 
+export interface Tower {
+  id: number; // comms node id (towerNodeId)
+  x: number;
+  y: number;
+  alive: boolean; // false once its tile has burned
+  lostAt: number;
+}
+
 export class World {
   cfg: Config;
   rng: Rng; // fire / wind randomness
@@ -30,19 +39,28 @@ export class World {
   base: { x: number; y: number; belief: BeliefMap; manualOutage: boolean };
   blackouts: Blackout[] = [];
   network: Network = { links: [], componentOf: new Map(), components: [] };
+  /** The nodes (positions, altitudes, ranges) the current network was built from. */
+  networkNodes: CommsNode[] = [];
+  towers: Tower[] = [];
   tick = 0;
   waterTiles: number[] = [];
   history: { tick: number; burning: number; burnt: number }[] = [];
   extinguishedAt = -1;
+  /** Every judge action applied to this run, with its tick (see judge.ts). Seed + config + this log replays the run. */
+  judgeLog: RecordedAction[] = [];
+  /** The config exactly as the run started, before any judge action changed it. */
+  readonly initialCfg: Config;
   private zoneCache = new Map<number, Zone[]>();
 
   constructor(cfg: Partial<Config> = {}) {
     this.cfg = { ...defaultConfig, ...cfg };
+    this.initialCfg = { ...this.cfg };
     const c = this.cfg;
     this.rng = new Rng(c.seed);
     this.agentRng = new Rng(c.seed * 7919 + 13);
     this.terrain = generateTerrain(this.rng, c.width, c.height, c.heightScale);
-    this.env = new Environment(this.terrain, c, this.rng);
+    // Regrowth draws from its own stream so that turning it on cannot change the fire's own dice.
+    this.env = new Environment(this.terrain, c, this.rng, new Rng(c.seed * 104729 + 71));
     this.env.seedIgnitions(c.ignitions);
     for (let t = 0; t < c.preburnTicks; t++) this.env.step(0); // fire takes hold before it's reported
     for (let i = 0; i < this.terrain.type.length; i++) if (this.terrain.type[i] === Tile.Water) this.waterTiles.push(i);
@@ -51,10 +69,21 @@ export class World {
     this.base = { x: b.x, y: b.y, belief: new BeliefMap(c.width, c.height), manualOutage: false };
     this.base.belief.observeAll(this.env, 0); // initial briefing (satellite / spotter plane)
     for (let k = 0; k < c.droneCount; k++) {
-      const d = new Drone(k, b.x + this.agentRng.range(-1, 1), b.y + this.agentRng.range(-1, 1), c, c.width, c.height);
+      let x: number;
+      let y: number;
+      if (c.spawnInLine) {
+        // Lined up across the pad, centred on the base (the spec: "start with ... in a line").
+        x = b.x + (k - (c.droneCount - 1) / 2) * 0.8;
+        y = b.y;
+      } else {
+        x = b.x + this.agentRng.range(-1, 1);
+        y = b.y + this.agentRng.range(-1, 1);
+      }
+      const d = new Drone(k, Math.max(0, Math.min(c.width - 1, x)), Math.max(0, Math.min(c.height - 1, y)), c, c.width, c.height);
       d.belief.copyFrom(this.base.belief);
       this.drones.push(d);
     }
+    this.towers = pickTowerSites(this.terrain, c.towers).map((s, k) => ({ id: towerNodeId(k), x: s.x, y: s.y, alive: true, lostAt: -1 }));
   }
 
   get baseOnline() {
@@ -75,7 +104,16 @@ export class World {
 
     for (const d of this.drones) if (d.alive) d.sense(this.env, c, this.tick);
 
-    this.network = this.buildNet();
+    // A relay tower is destroyed when the fire reaches it.
+    for (const t of this.towers) {
+      if (t.alive && this.env.fire[t.y * c.width + t.x] === Fire.Burning) {
+        t.alive = false;
+        t.lostAt = this.tick;
+      }
+    }
+
+    this.networkNodes = this.commsNodes();
+    this.network = buildNetwork(this.networkNodes, this.terrain, this.env, this.blackouts, c);
     this.shareInformation();
     if (c.mode === "swarm") this.updateTrackers();
     if (c.mode === "central" && this.tick % c.decisionInterval === 0) this.centralAssign();
@@ -112,7 +150,8 @@ export class World {
   }
 
   // ---------------------------------------------------------------- comms
-  private buildNet(): Network {
+  /** Every radio currently on the air: live drones, the base (if online) and standing towers. */
+  commsNodes(): CommsNode[] {
     const c = this.cfg;
     const nodes: CommsNode[] = [];
     for (const d of this.drones) {
@@ -123,11 +162,14 @@ export class World {
         id: BASE_ID,
         x: this.base.x,
         y: this.base.y,
-        z: terrainHeightAt(this.terrain, this.base.x, this.base.y) + 6, // base has a mast
+        z: terrainHeightAt(this.terrain, this.base.x, this.base.y) + BASE_MAST_HEIGHT, // base has a mast
         range: c.baseCommsRange,
       });
     }
-    return buildNetwork(nodes, this.terrain, this.env, this.blackouts, c);
+    for (const t of this.towers) {
+      if (t.alive) nodes.push({ id: t.id, x: t.x, y: t.y, z: terrainHeightAt(this.terrain, t.x, t.y) + c.towerHeight, range: c.towerRange });
+    }
+    return nodes;
   }
 
   inContact(a: number, b: number) {
@@ -143,11 +185,14 @@ export class World {
       const hasBase = comp.includes(BASE_ID);
       if (c.mode === "central" && !hasBase) continue; // central drones only talk via base
       const maps: BeliefMap[] = [];
-      for (const id of comp) maps.push(id === BASE_ID ? this.base.belief : this.drones[id].belief);
+      for (const id of comp) {
+        if (id === BASE_ID) maps.push(this.base.belief);
+        else if (id >= 0) maps.push(this.drones[id].belief); // towers (id < BASE_ID) only relay
+      }
       mergeGroup(maps);
 
       if (c.mode === "swarm") {
-        const members = comp.filter((id) => id !== BASE_ID).map((id) => this.drones[id]);
+        const members = comp.filter((id) => id >= 0).map((id) => this.drones[id]);
         // Heartbeat: each member republishes its plan with its current position.
         const merged = new Map<number, Claim>();
         for (const m of members) {
@@ -170,7 +215,7 @@ export class World {
     const comp = this.network.componentOf.get(d.id);
     if (comp === undefined) return;
     for (const id of this.network.components[comp]) {
-      if (id !== BASE_ID && id !== d.id) this.drones[id].claims.set(d.id, claim);
+      if (id >= 0 && id !== d.id) this.drones[id].claims.set(d.id, claim);
     }
   }
 
@@ -368,7 +413,7 @@ export class World {
     if (!this.baseOnline) return;
     const comp = this.network.componentOf.get(BASE_ID);
     if (comp === undefined) return;
-    const reachable = this.network.components[comp].filter((id) => id !== BASE_ID).map((id) => this.drones[id]);
+    const reachable = this.network.components[comp].filter((id) => id >= 0).map((id) => this.drones[id]);
     const zones = computeZones(this.base.belief, this.terrain, this.env.wind, this.cfg);
     const pairs: { d: Drone; z: Zone; s: number }[] = [];
     for (const d of reachable) {

@@ -1,6 +1,6 @@
 import { Config } from "./config";
 import { Rng } from "./rng";
-import { FUEL, Terrain, Tile, clamp } from "./terrain";
+import { FUEL, Terrain, Tile, clamp, neighbours4 } from "./terrain";
 
 export enum Fire {
   Unburnt = 0,
@@ -32,9 +32,17 @@ export class Environment {
   wind: Wind;
   villageLost = false;
   villageLostAt = -1;
+  burntAt: Int32Array; // tick a tile stopped burning (burnt out or extinguished), -1 = n/a
+  regrownAt: Int32Array; // tick a burnt tile last grew back, -1 = never
+  private everBurnt: Uint8Array;
+  private everBurntCount = 0; // tiles that have burned at least once (regrowth can hide them again)
   private smokeBuf: Float32Array;
 
-  constructor(readonly terrain: Terrain, readonly cfg: Config, private rng: Rng) {
+  /**
+   * @param regrowRng regrowth has its own random stream, so switching it on never changes
+   *                  which tiles the fire itself would have reached.
+   */
+  constructor(readonly terrain: Terrain, readonly cfg: Config, private rng: Rng, private regrowRng: Rng = new Rng(1)) {
     this.w = terrain.w;
     this.h = terrain.h;
     const n = this.w * this.h;
@@ -45,6 +53,9 @@ export class Environment {
     this.wetness = new Float32Array(n);
     this.smoke = new Float32Array(n);
     this.smokeBuf = new Float32Array(n);
+    this.burntAt = new Int32Array(n).fill(-1);
+    this.regrownAt = new Int32Array(n).fill(-1);
+    this.everBurnt = new Uint8Array(n);
     this.wind = { angle: rng.range(0, Math.PI * 2), speed: rng.range(0.3, 0.7) };
   }
 
@@ -59,6 +70,10 @@ export class Environment {
     this.severity[i] = severity;
     this.burnLeft[i] = FUEL[t].burnTicks;
     this.waterApplied[i] = 0;
+    if (!this.everBurnt[i]) {
+      this.everBurnt[i] = 1;
+      this.everBurntCount++;
+    }
     return true;
   }
 
@@ -84,7 +99,10 @@ export class Environment {
     return c;
   }
 
+  // Area burnt so far. Without regrowth this is simply every tile that is not Unburnt;
+  // with it, regrown tiles still count (they did burn), so use the running total.
   burntCount() {
+    if (this.cfg.regrowth) return this.everBurntCount;
     let c = 0;
     for (let i = 0; i < this.fire.length; i++) if (this.fire[i] !== Fire.Unburnt) c++;
     return c;
@@ -109,16 +127,50 @@ export class Environment {
         this.fire[i] = Fire.Burnt; // extinguished (it still counts as burnt area)
         this.severity[i] = 0;
         this.wetness[i] = 1;
+        this.burntAt[i] = this.lastTick;
       }
     } else if (this.fire[i] === Fire.Unburnt) {
       this.wetness[i] = Math.min(1, this.wetness[i] + amount);
     }
   }
 
+  private lastTick = 0;
+
   step(tick: number) {
+    this.lastTick = tick;
     this.stepWind();
     this.stepFire(tick);
+    if (this.cfg.regrowth) this.stepRegrowth(tick);
     this.stepSmoke();
+  }
+
+  // Burnt ground grows back after cfg.regrowAfter ticks, but only where at least one
+  // 4-neighbour is healthy vegetation to reseed it from. Regrown tiles can burn again.
+  private stepRegrowth(tick: number) {
+    const { w, h, cfg } = this;
+    const type = this.terrain.type;
+    for (let i = 0; i < this.fire.length; i++) {
+      if (this.fire[i] !== Fire.Burnt) continue;
+      if (tick - this.burntAt[i] < cfg.regrowAfter) continue;
+      if (FUEL[type[i] as Tile].ignite === 0) continue;
+      if (!this.hasHealthyNeighbour(i, w, h)) continue;
+      if (this.regrowRng.next() < cfg.regrowChance) {
+        this.fire[i] = Fire.Unburnt;
+        this.severity[i] = 0;
+        this.wetness[i] = 0;
+        this.waterApplied[i] = 0;
+        this.regrownAt[i] = tick;
+      }
+    }
+  }
+
+  /** Is any 4-neighbour of tile i unburnt grass or forest? */
+  hasHealthyNeighbour(i: number, w = this.w, h = this.h): boolean {
+    const type = this.terrain.type;
+    for (const j of neighbours4(i % w, Math.floor(i / w), w, h)) {
+      if (this.fire[j] === Fire.Unburnt && FUEL[type[j] as Tile].ignite > 0) return true;
+    }
+    return false;
   }
 
   private stepWind() {
@@ -146,6 +198,7 @@ export class Environment {
         if (this.burnLeft[i] <= 0) {
           this.fire[i] = Fire.Burnt;
           this.severity[i] = 0;
+          this.burntAt[i] = tick;
           continue;
         }
 
@@ -196,6 +249,7 @@ export class Environment {
     const dst = this.smokeBuf;
     const vx = Math.cos(this.wind.angle) * this.wind.speed * 0.8;
     const vy = Math.sin(this.wind.angle) * this.wind.speed * 0.8;
+    const massed = cfg.smokeModel === "massed";
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         // Semi-Lagrangian advection: look back along the wind.
@@ -211,12 +265,35 @@ export class Environment {
         const d = src[Math.min(h - 1, y0 + 1) * w + Math.min(w - 1, x0 + 1)];
         let v = (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy;
         const i = y * w + x;
-        if (this.fire[i] === Fire.Burning) v += cfg.smokeEmission * this.severity[i];
+        if (this.fire[i] === Fire.Burning) {
+          let emit = cfg.smokeEmission * this.severity[i];
+          if (massed) {
+            // Smoke needs several burning tiles: scale by how much of the surrounding 3x3
+            // block is alight, squared, so a lone tile (or a pair) only ever makes a wisp.
+            const m = Math.min(1, this.burningAround(x, y) / cfg.smokeMassTiles);
+            emit *= m * m;
+          }
+          v += emit;
+        }
         dst[i] = v * cfg.smokeDecay;
       }
     }
     this.smoke = dst;
     this.smokeBuf = src;
+  }
+
+  /** Burning tiles in the 3x3 block centred on (x, y), the centre included. */
+  burningAround(x: number, y: number): number {
+    let n = 0;
+    for (let dy = -1; dy <= 1; dy++) {
+      const yy = y + dy;
+      if (yy < 0 || yy >= this.h) continue;
+      for (let dx = -1; dx <= 1; dx++) {
+        const xx = x + dx;
+        if (xx >= 0 && xx < this.w && this.fire[yy * this.w + xx] === Fire.Burning) n++;
+      }
+    }
+    return n;
   }
 
   // Smoke density at a fractional position (used for sensing / damage).

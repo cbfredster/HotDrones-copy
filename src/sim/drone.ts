@@ -99,13 +99,14 @@ export class Drone {
       this.y += (dy / d) * cfg.droneSpeed;
     }
     const hAfter = terrainHeightAt(terrain, this.x, this.y);
-    // Battery: base drain, more into a headwind, more when climbing.
+    // Battery: base drain, more into a headwind, more when climbing (and, optionally, descending).
     let drain = cfg.batteryDrain;
     if (d > 0) {
       const head = -(Math.cos(env.wind.angle) * dx + Math.sin(env.wind.angle) * dy) / d;
       drain *= 1 + 0.8 * env.wind.speed * Math.max(0, head);
     }
-    drain += Math.max(0, hAfter - hBefore) * 0.0006;
+    drain += Math.max(0, hAfter - hBefore) * cfg.climbDrain;
+    if (cfg.descentDrain > 0) drain += Math.max(0, hBefore - hAfter) * cfg.descentDrain; // braking a descent costs too
     this.battery -= drain;
     return d <= cfg.droneSpeed;
   }

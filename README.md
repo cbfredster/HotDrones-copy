@@ -9,12 +9,25 @@ A wildfire spreads across hilly coniferous forest towards a village. Ten drones 
 
 ```bash
 npm install
-npm run dev          # opens the simulation in the browser (http://localhost:5173)
+npm run dev          # the isometric 3D app (http://localhost:5173)
 npm run experiment   # headless: 30 seeds x every condition -> results/ (about 2.5 min)
 npm run typecheck
+npm run experiment:legacy-check   # proves the sim still reproduces the frozen 2D results exactly
 ```
 
+In the 3D view: drag to pan, wheel to zoom, **Q/E** rotate 90° (hills hide things), **R** resets the view,
+**Space** plays/pauses, **.** steps one tick, **1–4** pick a judge tool, **B** shows the selected drone's own map.
+
 Open `results/report.html` after running the experiments for the charts.
+
+The original top-down 2D version is frozen in [`BASIC/`](BASIC/README.md) (tag `v-2d-basic`):
+
+```bash
+npm run dev:basic         # the 2D app on http://localhost:5174, side by side with the main app
+npm run experiment:basic  # its experiments; results land in BASIC/results/
+```
+
+The original brief is in [`PROJECT_OVERVIEW.md`](PROJECT_OVERVIEW.md); calls made along the way are logged in [`DECISIONS.md`](DECISIONS.md).
 
 ## Results (30 random maps per condition)
 
@@ -43,8 +56,11 @@ src/sim/            the simulation: no graphics, runs in the browser AND in Node
   tracker.ts        particle filter guessing where lost teammates are
   drone.ts          one drone: sensing, flying, battery, damage
   world.ts          the tick loop, the auction, the baselines, judge controls
-src/render/         top-down canvas renderer (swap in an isometric one here)
-src/main.ts         browser UI and controls
+  judge.ts          the one function judges' actions go through; records them for exact replays
+src/render/iso/     isometric three.js renderer, one file per concern (terrain, trees, fire, smoke, drones...)
+src/render/renderer.ts  the original top-down canvas renderer, now the corner minimap
+src/ui/             panels, minimap, end card
+src/main.ts         browser app: controls and the frame loop
 scripts/experiment.ts  headless experiment runner -> CSV + HTML charts
 ```
 
@@ -119,7 +135,6 @@ Seed 15 is a good demo: the swarm saves the village; central control and no coor
 
 ## Ideas for next steps
 
-- Isometric renderer (keep `src/sim` untouched; add `src/render/isometric.ts`).
 - Full CBBA (each drone plans a sequence of zones instead of one).
 - Fire forecasting inside each drone: run the fire model forward from its belief and target where the fire *will be*.
 - Real elevation data for a real wildfire-prone area.

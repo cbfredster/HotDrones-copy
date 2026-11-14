@@ -18,6 +18,9 @@ export interface CommsNode {
 
 export const BASE_ID = -1;
 
+/** The base's antenna sits this far above the terrain (sim height units). */
+export const BASE_MAST_HEIGHT = 6;
+
 // Height of the terrain at a fractional position (bilinear).
 export function terrainHeightAt(t: Terrain, x: number, y: number) {
   const cx = Math.max(0, Math.min(t.w - 1.001, x));
@@ -66,6 +69,52 @@ export function canLink(
   }
   return true;
 }
+
+export type LinkBlock = "hill" | "smoke" | "blackout";
+
+export interface BlockedLink {
+  reason: LinkBlock;
+  /** Where the link is cut: the hill or smoke on the line, or the endpoint inside a blackout zone. */
+  x: number;
+  y: number;
+  z: number;
+}
+
+/**
+ * Why can't a and b talk, although they are within radio range?
+ * Returns null if they can link, or if they are simply out of range.
+ * A read-only companion to canLink (same checks, in the same order), used by renderers
+ * to draw broken links by cause. It must never be used to decide who is connected.
+ */
+export function linkBlockReason(
+  a: CommsNode,
+  b: CommsNode,
+  terrain: Terrain,
+  env: Environment,
+  blackouts: Blackout[],
+  cfg: Config,
+): BlockedLink | null {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist > Math.min(a.range, b.range)) return null;
+  if (inBlackout(blackouts, a.x, a.y)) return { reason: "blackout", x: a.x, y: a.y, z: a.z };
+  if (inBlackout(blackouts, b.x, b.y)) return { reason: "blackout", x: b.x, y: b.y, z: b.z };
+  const steps = Math.max(2, Math.ceil(dist * 2));
+  for (let s = 1; s < steps; s++) {
+    const t = s / steps;
+    const x = a.x + dx * t;
+    const y = a.y + dy * t;
+    const lineZ = a.z + (b.z - a.z) * t;
+    if (terrainHeightAt(terrain, x, y) > lineZ) return { reason: "hill", x, y, z: lineZ };
+    if (cfg.smokeBlocksComms && env.smokeAt(x, y) > cfg.thickSmoke * 1.5) return { reason: "smoke", x, y, z: lineZ };
+  }
+  return null;
+}
+
+/** Relay towers use ids below BASE_ID: tower k is node -2 - k. */
+export const towerNodeId = (k: number) => -2 - k;
+export const isTowerId = (id: number) => id < BASE_ID;
 
 export interface Network {
   links: [number, number][]; // pairs of node ids with a direct link

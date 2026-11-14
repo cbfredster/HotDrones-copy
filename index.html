@@ -4,114 +4,151 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>HotDrones — wildfire swarm</title>
-    <style>
-      :root { --bg: #14161a; --panel: #1d2026; --line: #2c313a; --text: #e8e6e3; --dim: #9aa0a6; --accent: #ff9f1c; }
-      * { box-sizing: border-box; }
-      body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, sans-serif; }
-      header { padding: 10px 16px; border-bottom: 1px solid var(--line); display: flex; align-items: baseline; gap: 12px; }
-      header h1 { margin: 0; font-size: 20px; }
-      header h1 span { color: var(--accent); }
-      header p { margin: 0; color: var(--dim); }
-      main { display: flex; gap: 16px; padding: 16px; flex-wrap: wrap; }
-      canvas#map { border: 1px solid var(--line); border-radius: 6px; cursor: crosshair; max-width: 100%; }
-      aside { flex: 1; min-width: 300px; max-width: 440px; display: flex; flex-direction: column; gap: 12px; }
-      section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
-      section h2 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); }
-      .row { display: flex; align-items: center; gap: 8px; margin: 5px 0; flex-wrap: wrap; }
-      .row label { min-width: 92px; color: var(--dim); }
-      button, select, input[type=number] { background: #2a2f37; color: var(--text); border: 1px solid #3a404a; border-radius: 5px; padding: 5px 9px; font: inherit; }
-      button:hover { border-color: var(--accent); cursor: pointer; }
-      button.on { background: var(--accent); color: #111; border-color: var(--accent); }
-      input[type=range] { flex: 1; }
-      .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; }
-      .stats b { font-variant-numeric: tabular-nums; }
-      .bad { color: #ff595e; } .good { color: #80ed99; }
-      table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-      td, th { text-align: left; padding: 2px 4px; border-bottom: 1px solid var(--line); }
-      th { color: var(--dim); font-weight: normal; }
-      .legend span { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; color: var(--dim); font-size: 12px; }
-      .legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-      #chart { width: 100%; height: 70px; }
-      .hint { color: var(--dim); font-size: 12px; margin: 4px 0 0; }
-    </style>
   </head>
   <body>
     <header>
       <h1>Hot<span>Drones</span></h1>
       <p>A firefighting drone swarm that keeps working when communications fail.</p>
+      <span class="spacer"></span>
+      <span id="perf" class="perf" title="frames per second · draw calls · triangles"></span>
     </header>
-    <main>
-      <canvas id="map" width="768" height="768"></canvas>
-      <aside>
-        <section>
-          <h2>Run</h2>
-          <div class="row">
-            <label>Coordination</label>
-            <select id="mode">
-              <option value="swarm">Swarm (decentralised auction)</option>
-              <option value="central">Central control (base assigns)</option>
-              <option value="greedy">No coordination (nearest fire)</option>
-            </select>
-          </div>
-          <div class="row">
-            <label>Seed</label>
-            <input id="seed" type="number" value="15" style="width: 80px" />
-            <button id="reset">New run</button>
-            <button id="play" class="on">Pause</button>
-          </div>
-          <div class="row"><label>Speed</label><input id="speed" type="range" min="1" max="12" value="2" /></div>
-        </section>
 
-        <section>
-          <h2>Stats</h2>
-          <div class="stats" id="stats"></div>
-          <canvas id="chart" width="400" height="70"></canvas>
-        </section>
+    <div id="stage" data-tool="select">
+      <!-- The WebGL canvas and the drone-label layer are added here by the renderer. -->
 
-        <section>
-          <h2>Judge controls</h2>
-          <div class="row" id="tools">
-            <button data-tool="select" class="on">Select drone</button>
-            <button data-tool="ignite">Start fire</button>
-            <button data-tool="blackout">Comms blackout</button>
-            <button data-tool="crash">Crash drone</button>
-          </div>
-          <div class="row"><label>Wind direction</label><input id="windAngle" type="range" min="0" max="360" value="0" /></div>
-          <div class="row"><label>Wind speed</label><input id="windSpeed" type="range" min="0" max="100" value="50" /></div>
-          <div class="row"><label>Comms range</label><input id="range" type="range" min="4" max="40" value="14" /><b id="rangeVal"></b></div>
-          <div class="row">
-            <button id="baseOutage">Cut base comms</button>
-            <button id="clearBlackouts">Clear blackouts</button>
-          </div>
-          <div class="row">
-            <label><input type="checkbox" id="smokeComms" /> Smoke blocks comms</label>
-          </div>
-        </section>
+      <div class="hud top-left">
+        <div id="viewBadge" class="badge" hidden></div>
+      </div>
 
-        <section>
-          <h2>View</h2>
-          <div class="row">
-            <label><input type="checkbox" id="links" checked /> Comms links</label>
-            <label><input type="checkbox" id="smoke" checked /> Smoke</label>
-            <label><input type="checkbox" id="clouds" checked /> Teammate guesses</label>
-            <label><input type="checkbox" id="sensors" checked /> Sensor range</label>
-          </div>
-          <div class="row"><button id="beliefView">Show selected drone's map</button></div>
-          <div class="legend">
-            <span><i style="background:#ff9f1c"></i>to fire</span>
-            <span><i style="background:#4cc9f0"></i>water</span>
-            <span><i style="background:#b388ff"></i>base</span>
-            <span><i style="background:#80ed99"></i>scouting</span>
-            <span><i style="background:#e0e0e0"></i>idle</span>
-          </div>
-        </section>
+      <div id="banner" class="banner" hidden></div>
 
-        <section>
-          <h2>Selected drone</h2>
-          <div id="droneInfo" class="hint">Click a drone on the map.</div>
-        </section>
-      </aside>
-    </main>
+      <div class="hud top-right">
+        <div class="compass" title="Wind: the arrow points the way the wind is blowing">
+          <svg viewBox="-50 -50 100 100" width="84" height="84" aria-hidden="true">
+            <circle r="44" class="compass-ring" />
+            <g id="compassArrow">
+              <path d="M -30 0 L 14 0" class="compass-shaft" />
+              <path d="M 32 0 L 10 -11 L 10 11 Z" class="compass-head" />
+            </g>
+          </svg>
+          <div class="compass-label">WIND <b id="compassSpeed">0%</b></div>
+        </div>
+        <div class="cam-buttons">
+          <button id="camLeft" title="Rotate view left (Q)">⟲ Q</button>
+          <button id="camRight" title="Rotate view right (E)">E ⟳</button>
+          <button id="camReset" title="Reset view (R)">Reset</button>
+        </div>
+      </div>
+
+      <div class="hud bottom-left">
+        <div class="minimap">
+          <canvas id="minimap" width="256" height="256" title="Click to move the camera"></canvas>
+          <button id="minimapMode" class="minimap-mode" title="Switch between the true map and the selected drone's own map">Truth</button>
+        </div>
+      </div>
+
+      <div class="hud bottom-centre transport">
+        <button id="play" class="on" title="Play / pause (Space)">Pause</button>
+        <button id="step" title="Advance one tick (.)">Step</button>
+        <label for="speed">Speed</label>
+        <input id="speed" type="range" min="0" max="100" value="39" />
+        <b id="tpsVal">20</b><span class="unit">ticks/s</span>
+        <span class="tick">t = <b id="tickVal">0</b></span>
+      </div>
+
+      <div id="endcard" class="endcard" hidden>
+        <h2 id="endTitle"></h2>
+        <p id="endSub"></p>
+        <div class="stats" id="endStats"></div>
+        <div class="row">
+          <button id="endReplay" title="Run the same seed again and re-apply every judge action at the tick it happened">Replay</button>
+          <button id="endNewSeed" class="on">New seed</button>
+          <button id="endClose">Look around</button>
+        </div>
+      </div>
+    </div>
+
+    <aside>
+      <section>
+        <h2>Run</h2>
+        <div class="row">
+          <label>Coordination</label>
+          <select id="mode">
+            <option value="swarm">Swarm (decentralised auction)</option>
+            <option value="central">Central control (base assigns)</option>
+            <option value="greedy">No coordination (nearest fire)</option>
+          </select>
+        </div>
+        <div class="row">
+          <label>Seed</label>
+          <input id="seed" type="number" value="15" style="width: 80px" />
+          <button id="reset">New run</button>
+        </div>
+        <div class="row"><label>Drones</label><input id="droneCount" type="range" min="1" max="30" value="10" /><b id="droneCountVal">10</b></div>
+        <div class="row"><label>Relay towers</label><input id="towers" type="range" min="0" max="4" value="0" /><b id="towersVal">0</b></div>
+        <div class="row">
+          <label class="check" title="Drones start lined up across the pad instead of scattered around it"><input type="checkbox" id="spawnLine" checked /> Start in a line</label>
+          <span class="hint" style="margin:0">applied on New run</span>
+        </div>
+        <p class="hint">Space play/pause · <kbd>.</kbd> step · drag to pan · wheel to zoom · <kbd>Q</kbd>/<kbd>E</kbd> rotate · <kbd>R</kbd> reset view</p>
+      </section>
+
+      <section>
+        <h2>Stats</h2>
+        <div class="stats" id="stats"></div>
+        <canvas id="chart" width="400" height="70"></canvas>
+      </section>
+
+      <section>
+        <h2>Judge controls</h2>
+        <div class="row" id="tools">
+          <button data-tool="select" class="on" title="1">Select</button>
+          <button data-tool="ignite" title="2">Start fire</button>
+          <button data-tool="blackout" title="3">Comms blackout</button>
+          <button data-tool="crash" title="4">Crash drone</button>
+        </div>
+        <div class="row"><label>Wind direction</label><input id="windAngle" type="range" min="0" max="360" value="0" /></div>
+        <div class="row"><label>Wind speed</label><input id="windSpeed" type="range" min="0" max="100" value="50" /></div>
+        <div class="row"><label>Comms range</label><input id="range" type="range" min="4" max="40" value="14" /><b id="rangeVal"></b></div>
+        <div class="row">
+          <button id="baseOutage">Cut base comms</button>
+          <button id="clearBlackouts">Clear blackouts</button>
+        </div>
+        <div class="row">
+          <label class="check" title="Thick smoke between two radios cuts the link"><input type="checkbox" id="smokeComms" checked /> Smoke blocks comms</label>
+        </div>
+      </section>
+
+      <section>
+        <h2>View</h2>
+        <div class="row">
+          <label class="check"><input type="checkbox" id="links" checked /> Comms links</label>
+          <label class="check" title="Pairs that are in radio range but cut off, dashed and coloured by cause"><input type="checkbox" id="blocked" checked /> Broken links</label>
+          <label class="check"><input type="checkbox" id="smoke" checked /> Smoke</label>
+          <label class="check"><input type="checkbox" id="clouds" checked /> Teammate guesses</label>
+          <label class="check"><input type="checkbox" id="sensors" checked /> Sensor range</label>
+        </div>
+        <div class="row"><button id="beliefView" title="B">Show selected drone's map</button></div>
+        <div class="legend">
+          <span><i style="background:#ff9f1c"></i>to fire</span>
+          <span><i style="background:#4cc9f0"></i>water</span>
+          <span><i style="background:#b388ff"></i>base</span>
+          <span><i style="background:#80ed99"></i>scouting</span>
+          <span><i style="background:#e0e0e0"></i>idle</span>
+        </div>
+        <div class="legend">
+          <span><i class="dash" style="background:#8ff3ff"></i>link</span>
+          <span><i class="dash cut" style="color:#ffb703"></i>cut by hill</span>
+          <span><i class="dash cut" style="color:#e3e6ea"></i>by smoke</span>
+          <span><i class="dash cut" style="color:#c77dff"></i>by blackout</span>
+        </div>
+      </section>
+
+      <section>
+        <h2 id="selectedTitle">Selected</h2>
+        <div id="droneInfo" class="hint">Click a drone, or any tile, on the map.</div>
+      </section>
+    </aside>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
