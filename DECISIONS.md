@@ -24,9 +24,15 @@ so a later session (human or agent) doesn't undo working code. Mirrored into Ent
     can read them. **If the repo is made public for judging, the `refs/entire/*` checkpoint refs become public
     too** — review with `entire checkpoint explain` first, or move them with
     `entire configure --local --checkpoint-remote github:<owner>/<private-repo>`.
+  - **Checkpoint backend is `git-branch`, not the default `git-refs`.** The cloud session's git gateway only
+    accepts pushes to `refs/heads/*`: `refs/entire/checkpoints/*` (and tags, see step 1) are refused with a 403.
+    `entire configure --checkpoint-backend branch` stores checkpoints on the `entire/checkpoints/v1` branch,
+    which does get through. Once nobody needs to push from a cloud session, move back with
+    `entire configure --checkpoint-backend refs`.
   - This session started before the hooks existed, so it is linked to commits with
-    `entire session attach <session-id>` *after* each push. Attaching to an unpushed commit would rewrite it and
-    drop the environment's commit signature; attaching to a pushed commit leaves history alone.
+    `entire session attach <session-id> --force` on the newest *unpushed* commit (which adds the
+    `Entire-Checkpoint` trailer), followed by `git commit --amend --no-edit` to restore the environment's
+    commit signature, then `git push`.
 
 ## Step 1 — freeze the 2D version
 
@@ -43,4 +49,6 @@ so a later session (human or agent) doesn't undo working code. Mirrored into Ent
   relative to the working directory, so output lands in `BASIC/results/` and the root results are untouched
   (checked with checksums).
 - Added `npm run typecheck:basic` so the snapshot can be type-checked from the root.
-- Tag `v-2d-basic` points at the step 1 commit.
+- Tag `v-2d-basic` points at the step 1 commit (`d2fdf0c`). **It exists only in the cloud container:** the
+  session's git gateway refuses tag pushes. Publish it from any normal clone with
+  `git fetch origin && git tag -a v-2d-basic d2fdf0c -m "Frozen top-down 2D version (BASIC/)" && git push origin v-2d-basic`.
