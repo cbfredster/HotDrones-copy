@@ -1,0 +1,13 @@
+Project Overview: 
+
+Land: 
+Isometric vie wf regualr tiles
+
+Each tile has its own properties and can be in one of three states:
+- On fire
+- Burnt (regrows after a certain timestep and neighbouring conditions)
+- Not on fire
+
+Each tile has assocated properties that affect its behaviour as well as an associated height. 
+
+Fire: 
