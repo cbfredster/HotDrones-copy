@@ -1,5 +1,8 @@
 Project Overview:
 
+style: smashy road (low polygon)-esque very similair graphics
+
+
 Land:
 Isometric view of regular tiles
 
@@ -36,9 +39,11 @@ Fires produce smoke which sits above the fire, dispersing over time once the til
 
 Drones:
 
+
+
 Drones start from a home base and go to collect water from water sources (e.g. river pond reservoir)
 
-When the drones can communicate they make interlinked decisions about how to most effectively as a group extinguish the fire
+When the drones can communicate they make interlinked decisions about how to most effectively as a group extinguish the fire (can define number of drones to start with)
 
 However sometimes they cannot communicate with each other:
 
