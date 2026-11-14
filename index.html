@@ -10,6 +10,10 @@
       <h1>Hot<span>Drones</span></h1>
       <p>A firefighting drone swarm that keeps working when communications fail.</p>
       <span class="spacer"></span>
+      <span id="integrations" class="dots" title="Integrations"></span>
+      <a class="navlink" href="/dashboard.html" target="_blank" rel="noopener">Dashboard</a>
+      <a class="navlink" href="/board.html" target="_blank" rel="noopener">Challenge board</a>
+      <button id="soundToggle" title="Turn sound on: radio voices, effects and the swarm's music (M)">Sound off</button>
       <span id="perf" class="perf" title="frames per second · draw calls · triangles"></span>
     </header>
 
@@ -60,11 +64,14 @@
         <h2 id="endTitle"></h2>
         <p id="endSub"></p>
         <div class="stats" id="endStats"></div>
+        <div id="endReport" class="report" hidden></div>
         <div class="row">
           <button id="endReplay" title="Run the same seed again and re-apply every judge action at the tick it happened">Replay</button>
           <button id="endNewSeed" class="on">New seed</button>
           <button id="endClose">Look around</button>
+          <button id="endSave" title="Save this run (seed, settings and every judge action) and run it against every coordination mode">Save &amp; challenge</button>
         </div>
+        <div id="endShare" class="share" hidden></div>
       </div>
     </div>
 
@@ -97,6 +104,39 @@
         <h2>Stats</h2>
         <div class="stats" id="stats"></div>
         <canvas id="chart" width="400" height="70"></canvas>
+      </section>
+
+      <section>
+        <h2>Radio <span id="commanderTag" class="tag"></span></h2>
+        <div id="radioLog" class="radio-log" aria-live="polite"></div>
+        <div id="chips" class="chips"></div>
+        <form id="commandForm" class="row command">
+          <input id="commandText" type="text" autocomplete="off" placeholder="Tell the commander: “cut base comms”, “start a fire near the village”…" />
+          <button id="micButton" type="button" title="Hold to talk">Mic</button>
+          <button type="submit">Send</button>
+        </form>
+        <p class="hint">The commander sits at the base and only knows what the base knows. It proposes judge actions for you to confirm; it never steers the drones.</p>
+      </section>
+
+      <section>
+        <h2>Sound</h2>
+        <div class="row">
+          <label class="check"><input type="checkbox" id="sndVoices" checked /> Radio voices</label>
+          <label class="check" title="Each drone is a note. Drones that can reach each other play on one beat; a group that is cut off drifts out of time and out of tune until it reconnects."><input type="checkbox" id="sndSwarm" checked /> Swarm music</label>
+          <label class="check"><input type="checkbox" id="sndEffects" checked /> Effects</label>
+          <label class="check" title="Music stems from public/audio (made by npm run audio:generate), crossfaded by threat level"><input type="checkbox" id="sndStems" checked /> Score</label>
+        </div>
+        <div class="row"><label>Volume</label><input id="sndVolume" type="range" min="0" max="100" value="70" /></div>
+        <p class="hint" id="soundHint">Sound is off. Press <kbd>M</kbd> or the button in the header.</p>
+      </section>
+
+      <section>
+        <h2>Scenario</h2>
+        <div class="row">
+          <input id="scenarioName" type="text" placeholder="Name this scenario" style="flex:1; min-width: 120px" />
+          <button id="scenarioSave" title="Save seed, settings and every judge action so far, then run it against every coordination mode">Save &amp; challenge</button>
+        </div>
+        <div id="scenarioShare" class="share" hidden></div>
       </section>
 
       <section>

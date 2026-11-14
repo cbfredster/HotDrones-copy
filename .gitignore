@@ -5,3 +5,5 @@ publish
 .env.local
 .claude/settings.local.json
 results/legacy
+data
+public/audio/.tmp

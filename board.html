@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HotDrones — challenge the swarm</title>
+  </head>
+  <body>
+    <header>
+      <h1>Hot<span>Drones</span></h1>
+      <p>Challenge the swarm</p>
+      <span class="spacer"></span>
+      <span class="source" id="source"></span>
+      <a href="/">Simulation</a>
+      <a href="/dashboard.html">Dashboard</a>
+    </header>
+    <main>
+      <p style="color: var(--dim); max-width: 760px">
+        Build a nasty scenario in the simulation (start fires, cut the base radio, drop blackouts, crash drones), then press
+        <b style="color: var(--text)">Save &amp; challenge</b>. The server replays it exactly, once for each way of coordinating the drones,
+        and ranks the scenarios that hurt the swarm most.
+      </p>
+      <div class="card"><div id="board"><p class="empty">Loading…</p></div></div>
+    </main>
+    <script type="module" src="/src/pages/board.ts"></script>
+  </body>
+</html>

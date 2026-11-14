@@ -1,6 +1,7 @@
 // Browser app: wires the controls to the simulation and draws it with the isometric
 // renderer. The sim itself lives in src/sim and never imports anything from here.
 import "./style.css";
+import { Integrations } from "./integrations";
 import { IsoRenderer, IsoViewOptions, PickResult } from "./render/iso";
 import { Config, Mode } from "./sim/config";
 import { JudgeAction, RecordedAction, ReplayCursor, applyJudgeAction } from "./sim/judge";
@@ -51,6 +52,14 @@ const overlays = new RunOverlays({
   },
 });
 
+// Sponsor integrations (radio log, AI commander, voices, telemetry, scenarios). They only
+// read the world; their one write path is the `judge` function below.
+const integrations = new Integrations({
+  judge: (a) => judge(a),
+  startRun: (cfg, actions) => startRun(cfg, actions),
+  getWorld: () => world,
+});
+
 // ---------------------------------------------------------------- runs
 /** Start a run. With `actions`, every recorded judge action is re-applied at its original tick. */
 function startRun(cfg: Partial<Config>, actions?: RecordedAction[]) {
@@ -73,6 +82,7 @@ function startRun(cfg: Partial<Config>, actions?: RecordedAction[]) {
   input("seed").value = String(world.cfg.seed);
   $<HTMLSelectElement>("mode").value = world.cfg.mode;
   syncControls(true);
+  integrations.onRun(world);
   // Handy in the browser console, and used by the headless checks.
   Object.assign(window as any, { world, view, iso, hot: { stepOnce, judge, setPlaying, setTps, startRun } });
 }
@@ -91,7 +101,12 @@ function newRunFromControls() {
 
 /** The single path for judge writes: applies the action and records it with its tick. */
 function judge(action: JudgeAction) {
-  return applyJudgeAction(world, action);
+  const ok = applyJudgeAction(world, action);
+  if (ok) {
+    integrations.afterJudge(world);
+    syncControls(); // the AI commander can change the same things the sliders do
+  }
+  return ok;
 }
 
 function stepOnce() {
@@ -99,6 +114,7 @@ function stepOnce() {
   replay?.applyDue(world);
   world.step();
   iso.onTick();
+  integrations.afterTick(world);
 }
 
 // ---------------------------------------------------------------- controls
@@ -320,6 +336,7 @@ function loop(now: number) {
   }
 
   iso.draw(view, shownAlpha);
+  integrations.frame(world, playing);
 
   if (frame % 2 === 0) updateHud();
   if (frame % 3 === 0) minimap.draw(view);
@@ -339,4 +356,5 @@ function loop(now: number) {
 setTps(20);
 setTool("select");
 newRunFromControls();
+integrations.loadScenarioFromUrl(); // ?scenario=<id> replaces the default run once it has loaded
 requestAnimationFrame(loop);

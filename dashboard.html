@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HotDrones — live dashboard</title>
+  </head>
+  <body>
+    <header>
+      <h1>Hot<span>Drones</span></h1>
+      <p>Live telemetry dashboard</p>
+      <span class="spacer"></span>
+      <span class="source" id="source"></span>
+      <a href="/">Simulation</a>
+      <a href="/board.html">Challenge board</a>
+    </header>
+    <main>
+      <h2>Live run <select id="runPick" title="Pick a run"></select></h2>
+      <div class="tiles" id="tiles"></div>
+      <div class="grid" style="margin-top: 14px">
+        <div class="card"><h3>Fire growth</h3><p class="sub">Tiles burning now, and total area burnt so far.</p><div id="chartFire"></div></div>
+        <div class="card"><h3>Connectivity</h3><p class="sub">How many separate groups the swarm's radio network has split into. One group means everyone can reach everyone.</p><div id="chartNet"></div></div>
+        <div class="card"><h3>Battery across the swarm</h3><p class="sub">Average battery, with the band from the lowest drone to the highest.</p><div id="chartBattery"></div></div>
+        <div class="card"><h3>Smoke</h3><p class="sub">Tiles under smoke thick enough to cut radio links and blind sensors.</p><div id="chartSmoke"></div></div>
+      </div>
+
+      <h2>Experiments: swarm vs central vs no coordination <select id="sweepPick" title="Pick a sweep"></select></h2>
+      <p class="source" id="expSource"></p>
+      <div class="grid">
+        <div class="card"><h3>Area burnt as comms get worse</h3><p class="sub">Mean tiles burnt per run; bars are 95% confidence intervals. Lower is better.</p><div id="chartBurnt"></div></div>
+        <div class="card"><h3>How often the village is lost</h3><p class="sub">Share of runs in which fire reached the village. Lower is better.</p><div id="chartLost"></div></div>
+      </div>
+      <div class="card" style="margin-top: 14px">
+        <h3>All conditions</h3>
+        <p class="sub">Every experiment condition in this sweep, as a table.</p>
+        <div id="expTable"></div>
+      </div>
+    </main>
+    <script type="module" src="/src/pages/dashboard.ts"></script>
+  </body>
+</html>
