@@ -10,4 +10,22 @@ Each tile has its own properties and can be in one of three states:
 
 Each tile has assocated properties that affect its behaviour as well as an associated height. 
 
+Land can be of the default 4 types:
+- grass 
+- forest 
+- sand 
+- rocky
+- water
+The type affects if it can sbe set on fire and how 
+
 Fire: 
+
+Fire can spread to neighbouring tiles with a certain porbability depdending in a few factors: 
+- wind(affects tiles directionally)
+- fuel (whats on the tiles)
+- Slope (fire spreads easier up a slope)
+
+
+
+
+
