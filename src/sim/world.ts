@@ -1,8 +1,9 @@
 import { BeliefMap, mergeGroup } from "./belief";
-import { BASE_ID, Blackout, CommsNode, Network, buildNetwork, terrainHeightAt } from "./comms";
+import { BASE_ID, BASE_MAST_HEIGHT, Blackout, CommsNode, Network, buildNetwork, terrainHeightAt } from "./comms";
 import { Config, defaultConfig } from "./config";
 import { Drone } from "./drone";
 import { Environment, Fire } from "./environment";
+import type { RecordedAction } from "./judge";
 import { Claim, Zone, computeZones } from "./planner";
 import { Rng } from "./rng";
 import { Terrain, Tile, generateTerrain } from "./terrain";
@@ -34,10 +35,15 @@ export class World {
   waterTiles: number[] = [];
   history: { tick: number; burning: number; burnt: number }[] = [];
   extinguishedAt = -1;
+  /** Every judge action applied to this run, with its tick (see judge.ts). Seed + config + this log replays the run. */
+  judgeLog: RecordedAction[] = [];
+  /** The config exactly as the run started, before any judge action changed it. */
+  readonly initialCfg: Config;
   private zoneCache = new Map<number, Zone[]>();
 
   constructor(cfg: Partial<Config> = {}) {
     this.cfg = { ...defaultConfig, ...cfg };
+    this.initialCfg = { ...this.cfg };
     const c = this.cfg;
     this.rng = new Rng(c.seed);
     this.agentRng = new Rng(c.seed * 7919 + 13);
@@ -123,7 +129,7 @@ export class World {
         id: BASE_ID,
         x: this.base.x,
         y: this.base.y,
-        z: terrainHeightAt(this.terrain, this.base.x, this.base.y) + 6, // base has a mast
+        z: terrainHeightAt(this.terrain, this.base.x, this.base.y) + BASE_MAST_HEIGHT, // base has a mast
         range: c.baseCommsRange,
       });
     }

@@ -1,5 +1,6 @@
-// Top-down renderer. Kept completely separate from the simulation so an
-// isometric renderer can be dropped in later without touching src/sim.
+// Top-down renderer. Kept completely separate from the simulation.
+// The main view is now the isometric renderer in ./iso; this one draws the minimap
+// (pass `compact: true`) and is still the whole display of the frozen 2D app in BASIC/.
 import { BASE_ID } from "../sim/comms";
 import { Drone } from "../sim/drone";
 import { Fire } from "../sim/environment";
@@ -13,6 +14,8 @@ export interface ViewOptions {
   showSmoke: boolean;
   showClouds: boolean;
   showSensors: boolean;
+  /** Minimap mode: drones become plain dots (no ID text or bars), which stay legible at 3-4 px per tile. */
+  compact?: boolean;
 }
 
 const TILE_RGB: Record<number, [number, number, number]> = {
@@ -23,7 +26,8 @@ const TILE_RGB: Record<number, [number, number, number]> = {
   [Tile.Water]: [63, 127, 191],
 };
 
-const STATE_COLOUR: Record<string, string> = {
+// Exported so the isometric renderer colours drones exactly like this one.
+export const STATE_COLOUR: Record<string, string> = {
   idle: "#e0e0e0",
   toFire: "#ff9f1c",
   toWater: "#4cc9f0",
@@ -34,7 +38,7 @@ const STATE_COLOUR: Record<string, string> = {
   dead: "#555",
 };
 
-const TEAM_COLOURS = ["#ff595e", "#ffca3a", "#8ac926", "#1982c4", "#6a4c93", "#f15bb5", "#00bbf9", "#fee440", "#9b5de5", "#00f5d4", "#fb5607", "#3a86ff"];
+export const TEAM_COLOURS = ["#ff595e", "#ffca3a", "#8ac926", "#1982c4", "#6a4c93", "#f15bb5", "#00bbf9", "#fee440", "#9b5de5", "#00f5d4", "#fb5607", "#3a86ff"];
 
 export class Renderer {
   private terrainImg: HTMLCanvasElement;
@@ -225,7 +229,25 @@ export class Renderer {
     }
 
     // Drones.
-    for (const d of world.drones) this.drawDrone(ctx, d, d.id === opts.selected);
+    for (const d of world.drones) {
+      if (opts.compact) this.drawDroneDot(ctx, d, d.id === opts.selected);
+      else this.drawDrone(ctx, d, d.id === opts.selected);
+    }
+  }
+
+  // Minimap version of a drone: a dot in its state colour, ringed when selected.
+  private drawDroneDot(ctx: CanvasRenderingContext2D, d: Drone, selected: boolean) {
+    const s = this.scale;
+    const x = (d.x + 0.5) * s;
+    const y = (d.y + 0.5) * s;
+    const r = Math.max(2.4, s * 0.7) + (selected ? 1.2 : 0);
+    ctx.fillStyle = STATE_COLOUR[d.state] ?? "#fff";
+    ctx.strokeStyle = selected ? "#fff" : "#000";
+    ctx.lineWidth = selected ? 2 : 1;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
   }
 
   private drawDrone(ctx: CanvasRenderingContext2D, d: Drone, selected: boolean) {

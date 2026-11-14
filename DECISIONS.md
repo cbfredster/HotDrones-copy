@@ -52,3 +52,42 @@ so a later session (human or agent) doesn't undo working code. Mirrored into Ent
 - Tag `v-2d-basic` points at the step 1 commit (`d2fdf0c`). **It exists only in the cloud container:** the
   session's git gateway refuses tag pushes. Publish it from any normal clone with
   `git fetch origin && git tag -a v-2d-basic d2fdf0c -m "Frozen top-down 2D version (BASIC/)" && git push origin v-2d-basic`.
+
+## Step 2 — isometric 3D renderer
+
+- **three.js r187**, WebGLRenderer. Everything is built from primitives (boxes, cones, a lathe for the
+  domes); no textures, no external assets. Flat-shaded Lambert + one shadow-casting sun + a sky fill.
+- **Layout:** `src/render/iso/` is split by concern so several people can work at once — `scene`, `camera`,
+  `terrain`, `trees` (+ boulders), `structures` (village, helipad, mast), `fire` (flames, embers), `smoke`,
+  `drones`, `particles` (water, steam, sparks, wreck smoke), `overlays` (links, domes, selection), `picking`,
+  and `index.ts`, the only file the app imports.
+- **Coordinates:** sim x → X, sim y → Z, height → Y × `V_SCALE` (0.4, in `util.ts`). Tiles are centred on
+  integer coordinates, like the 2D view. The same scale is applied to terrain, drone altitude, the mast tip,
+  link endpoints and smoke. `BASE_MAST_HEIGHT` (6) now lives in `sim/comms.ts` and is used by both
+  `World.buildNet` and the renderer, so the drawn mast tip *is* the base's comms node.
+- **Renderers only read.** No `world.rng` / `world.agentRng` anywhere under `src/render` or `src/ui`; cosmetic
+  randomness is `hash01(tile, salt)` or a hash-seeded `CosmeticRng`.
+- **One write path:** `applyJudgeAction(world, action)` in `src/sim/judge.ts`. Every control, and later the AI
+  commander, goes through it; it validates, applies, and appends `{tick, action}` to `world.judgeLog`
+  (same-tick slider spam is coalesced). `world.initialCfg` is the config before any judge touched it.
+  `ReplayCursor` / `runScenario` replay a log; the end card's **Replay** button uses it and was checked to
+  reproduce a run with 9 judge actions exactly (identical metrics and log).
+- **Diff, don't redraw:** each tile's look is packed into one integer key (fire state, wetness level, fog
+  level, fuel level). Once per rendered tick the key array is diffed and only changed tiles are restyled.
+  Extinguished = `Burnt` with wetness ≥ 0.5 (wet, dark blue), distinct from burnt-out charcoal.
+- **Loop:** ticks-per-second control, logarithmic 2–720 (720 = the old maximum of 12 ticks/frame at 60 fps),
+  default 20, single-step, and drone positions interpolated between ticks. `World.finished` is untouched;
+  the sim keeps running after the village is lost (banner only).
+- **Picking:** raycast against the two terrain InstancedMeshes (`instanceId` = tile index), then the 2D app's
+  tool logic. Drones are picked in screen space first, because they fly above the tile they are over.
+  Checked: 600/600 projected tile centres pick the right tile; a drag never fires a tool.
+- **Selection:** a click within 26 px of a drone (or 2 tiles of one) selects it; any other click opens the
+  tile inspector. The 2D app used 3 tiles, which would have swallowed most inspector clicks near the swarm.
+- **Cosmetic liberties, deliberately small:** drones sharing a sim position are drawn 0.2 tiles apart, and
+  drones that are charging park on pad slots. Links are drawn to where the drone is drawn.
+- **Minimap:** `src/render/renderer.ts` is reused unchanged apart from an exported colour table and a
+  `compact` flag (drones as dots). "Auto" shows the opposite of the main view: the selected drone's map
+  while the 3D view shows the truth, and the truth while the 3D view shows a drone's map.
+- **Performance (measured headless):** 0.43 ms of JS per frame mid-fire, 0.58 ms per sim tick, ~50 draw
+  calls, ~470k triangles including the shadow pass; ~50 fps on a *software* rasteriser. Not measured on a
+  physical laptop GPU.

@@ -18,6 +18,9 @@ export interface CommsNode {
 
 export const BASE_ID = -1;
 
+/** The base's antenna sits this far above the terrain (sim height units). */
+export const BASE_MAST_HEIGHT = 6;
+
 // Height of the terrain at a fractional position (bilinear).
 export function terrainHeightAt(t: Terrain, x: number, y: number) {
   const cx = Math.max(0, Math.min(t.w - 1.001, x));
