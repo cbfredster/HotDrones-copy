@@ -4,12 +4,21 @@
 //   results/summary.csv  averages per condition
 //   results/report.html  charts for the pitch
 //
-// Usage: npm run experiment -- [seeds=30]
+// Usage: npm run experiment -- [seeds=30] [--legacy] [--out <dir>]
+//   --legacy   switch off everything added since the 2D version (legacyConfig). The output
+//              must then match BASIC/results/summary.csv exactly: `npm run experiment:legacy-check`.
+//   --out      where to write (default: results, or results/legacy with --legacy)
 import { mkdirSync, writeFileSync } from "node:fs";
-import { Mode } from "../src/sim/config";
+import { Mode, legacyConfig } from "../src/sim/config";
 import { World } from "../src/sim/world";
 
-const SEEDS = Number(process.argv[2]) || 30;
+const args = process.argv.slice(2);
+const flag = (name: string) => args.includes(name);
+const option = (name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
+const LEGACY = flag("--legacy");
+const OUT = option("--out") ?? (LEGACY ? "results/legacy" : "results");
+const SEEDS = Number(args.find((a, i) => /^\d+$/.test(a) && args[i - 1] !== "--out")) || 30;
+const BASE_CFG = LEGACY ? legacyConfig : {};
 const MODES: Mode[] = ["swarm", "central", "greedy"];
 const RANGES = [6, 8, 11, 14, 20, 30, 200];
 
@@ -27,7 +36,7 @@ interface Row {
 
 const rows: Row[] = [];
 function run(experiment: string, mode: Mode | "none", seed: number, extra: Record<string, number | boolean>) {
-  const w = new World({ seed, mode: mode === "none" ? "swarm" : mode, ...(mode === "none" ? { droneCount: 0 } : {}), ...extra });
+  const w = new World({ ...BASE_CFG, seed, mode: mode === "none" ? "swarm" : mode, ...(mode === "none" ? { droneCount: 0 } : {}), ...extra });
   const m = w.runToEnd();
   rows.push({
     experiment,
@@ -57,9 +66,9 @@ for (let s = 1; s <= SEEDS; s++) run("noDrones", "none", s, {});
 process.stdout.write(`all runs done (${((Date.now() - t0) / 1000).toFixed(0)}s)\n`);
 
 // ------------------------------------------------------------------ summarise
-mkdirSync("results", { recursive: true });
+mkdirSync(OUT, { recursive: true });
 const keys = Object.keys(rows[0]) as (keyof Row)[];
-writeFileSync("results/runs.csv", [keys.join(","), ...rows.map((r) => keys.map((k) => r[k]).join(","))].join("\n"));
+writeFileSync(`${OUT}/runs.csv`, [keys.join(","), ...rows.map((r) => keys.map((k) => r[k]).join(","))].join("\n"));
 
 interface Summary {
   experiment: string;
@@ -95,7 +104,7 @@ for (const g of groups.values()) {
 }
 const skeys = Object.keys(summary[0]) as (keyof Summary)[];
 writeFileSync(
-  "results/summary.csv",
+  `${OUT}/summary.csv`,
   [skeys.join(","), ...summary.map((r) => skeys.map((k) => (typeof r[k] === "number" ? +(r[k] as number).toFixed(3) : r[k])).join(","))].join("\n"),
 );
 
@@ -186,5 +195,5 @@ h1 span{color:#ff9f1c} .card{background:#1d2026;border:1px solid #2c313a;border-
 <div class="card">${lineChart("villageLostRate", "How often the village is lost", "village lost", 1)}</div>
 <div class="card">${outageBars()}</div>
 </body></html>`;
-writeFileSync("results/report.html", html);
-console.log("\nWrote results/runs.csv, results/summary.csv, results/report.html");
+writeFileSync(`${OUT}/report.html`, html);
+console.log(`\nWrote ${OUT}/runs.csv, ${OUT}/summary.csv, ${OUT}/report.html`);

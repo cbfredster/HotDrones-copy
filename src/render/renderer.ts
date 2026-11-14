@@ -16,6 +16,8 @@ export interface ViewOptions {
   showSensors: boolean;
   /** Minimap mode: drones become plain dots (no ID text or bars), which stay legible at 3-4 px per tile. */
   compact?: boolean;
+  /** Draw pairs that are in range but cut off (hill / smoke / blackout). Used by the 3D view. */
+  showBlocked?: boolean;
 }
 
 const TILE_RGB: Record<number, [number, number, number]> = {
@@ -162,6 +164,24 @@ export class Renderer {
     ctx.textBaseline = "middle";
     ctx.fillText("H", bx, by + 1);
 
+    // Relay towers: a small diamond, hollow once burnt down.
+    for (const t of world.towers) {
+      const tx = (t.x + 0.5) * s;
+      const ty = (t.y + 0.5) * s;
+      const r = Math.max(3, s * 0.9);
+      ctx.beginPath();
+      ctx.moveTo(tx, ty - r);
+      ctx.lineTo(tx + r, ty);
+      ctx.lineTo(tx, ty + r);
+      ctx.lineTo(tx - r, ty);
+      ctx.closePath();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = "#111";
+      ctx.fillStyle = t.alive ? "#ff5d73" : "#444";
+      ctx.fill();
+      ctx.stroke();
+    }
+
     // Smoke drifts with the wind; drawn smoothed.
     if (opts.showSmoke && !viewer) {
       const sctx = this.smokeLayer.getContext("2d")!;
@@ -198,8 +218,9 @@ export class Renderer {
       ctx.strokeStyle = "rgba(120,230,255,0.55)";
       ctx.lineWidth = 1;
       for (const [a, b] of world.network.links) {
-        const pa = a === BASE_ID ? world.base : world.drones[a];
-        const pb = b === BASE_ID ? world.base : world.drones[b];
+        const pa = this.nodeAt(a);
+        const pb = this.nodeAt(b);
+        if (!pa || !pb) continue;
         ctx.beginPath();
         ctx.moveTo((pa.x + 0.5) * s, (pa.y + 0.5) * s);
         ctx.lineTo((pb.x + 0.5) * s, (pb.y + 0.5) * s);
@@ -233,6 +254,11 @@ export class Renderer {
       if (opts.compact) this.drawDroneDot(ctx, d, d.id === opts.selected);
       else this.drawDrone(ctx, d, d.id === opts.selected);
     }
+  }
+
+  private nodeAt(id: number): { x: number; y: number } | undefined {
+    if (id === BASE_ID) return this.world.base;
+    return id >= 0 ? this.world.drones[id] : this.world.towers.find((t) => t.id === id);
   }
 
   // Minimap version of a drone: a dot in its state colour, ringed when selected.

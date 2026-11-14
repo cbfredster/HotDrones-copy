@@ -17,6 +17,7 @@ const CHARCOAL = rgb(0x1b1615);
 const SCORCH = rgb(0x8a3b12); // foliage colour as it burns away
 const SINGED = rgb(0x2f3b29); // what is left when a drone puts the tile out in time
 const BOULDER = rgb(0x8b929c);
+const SAPLING = rgb(0x7fdc55);
 
 // Up to three slots per tile, jittered, so trees on one tile never sit on top of each other.
 const SLOTS: [number, number][][] = [
@@ -148,7 +149,7 @@ export class TreeLayer {
    * Restyle the trees on one tile.
    * @param fuelLeft 1 = just caught fire, 0 = about to burn out (only used while Burning).
    */
-  applyTile(i: number, vis: TileVis, fog: number, fuelLeft: number) {
+  applyTile(i: number, vis: TileVis, fog: number, fuelLeft: number, young = 0) {
     const s0 = this.start[i];
     if (s0 < 0) return;
     const dim = 1 - 0.78 * fog;
@@ -160,6 +161,10 @@ export class TreeLayer {
       let trunkStretch = 1;
       if (vis === TileVis.Unburnt) {
         c.copy(FOLIAGE[this.tc[t]]);
+        if (young > 0) {
+          crown = 1 - 0.62 * young; // saplings on regrown ground, filling out over time
+          mixColor(c, c, SAPLING, 0.6 * young);
+        }
       } else if (vis === TileVis.Burning) {
         crown = 0.3 + 0.7 * fuelLeft;
         mixColor(c, SCORCH, FOLIAGE[this.tc[t]], fuelLeft * fuelLeft);

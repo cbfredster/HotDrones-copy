@@ -37,6 +37,7 @@ const BURNT = rgb(0x2a2422);
 const BURNT_ALT = rgb(0x3a302b);
 const EXTINGUISHED = rgb(0x20384f); // wet + dark: clearly not the same as burnt-out ground
 const WET_TINT = rgb(0x4fb0ff);
+const REGROWTH = rgb(0xc4f56a); // fresh growth on ground that burned earlier
 
 export class TerrainLayer {
   readonly group = new Group();
@@ -127,7 +128,7 @@ export class TerrainLayer {
   }
 
   /** Recolour one tile's cap. Called only for tiles whose visual state changed. */
-  applyTile(i: number, vis: TileVis, wet: number, fog: number) {
+  applyTile(i: number, vis: TileVis, wet: number, fog: number, young = 0) {
     this.vis[i] = vis;
     this.fog[i] = fog;
     const c = this.tmp;
@@ -136,6 +137,7 @@ export class TerrainLayer {
     else if (vis === TileVis.Extinguished) c.copy(EXTINGUISHED);
     else {
       c.fromArray(this.base, i * 3);
+      if (young > 0) mixColor(c, c, REGROWTH, 0.7 * young);
       if (wet > 0) mixColor(c, c, WET_TINT, 0.5 * wet); // faint blue: a wetted firebreak
     }
     c.multiplyScalar(1 - 0.78 * fog);

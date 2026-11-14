@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "typecheck:basic": "tsc --noEmit -p BASIC",
     "experiment": "tsx scripts/experiment.ts",
-    "experiment:basic": "cd BASIC && tsx scripts/experiment.ts"
+    "experiment:basic": "cd BASIC && tsx scripts/experiment.ts",
+    "experiment:legacy-check": "tsx scripts/experiment.ts --legacy && tsx scripts/check-legacy.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

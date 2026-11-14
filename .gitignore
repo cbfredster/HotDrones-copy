@@ -4,3 +4,4 @@ publish
 .env
 .env.local
 .claude/settings.local.json
+results/legacy

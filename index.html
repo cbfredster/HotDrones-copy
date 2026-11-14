@@ -84,6 +84,12 @@
           <input id="seed" type="number" value="15" style="width: 80px" />
           <button id="reset">New run</button>
         </div>
+        <div class="row"><label>Drones</label><input id="droneCount" type="range" min="1" max="30" value="10" /><b id="droneCountVal">10</b></div>
+        <div class="row"><label>Relay towers</label><input id="towers" type="range" min="0" max="4" value="0" /><b id="towersVal">0</b></div>
+        <div class="row">
+          <label class="check" title="Drones start lined up across the pad instead of scattered around it"><input type="checkbox" id="spawnLine" checked /> Start in a line</label>
+          <span class="hint" style="margin:0">applied on New run</span>
+        </div>
         <p class="hint">Space play/pause · <kbd>.</kbd> step · drag to pan · wheel to zoom · <kbd>Q</kbd>/<kbd>E</kbd> rotate · <kbd>R</kbd> reset view</p>
       </section>
 
@@ -109,7 +115,7 @@
           <button id="clearBlackouts">Clear blackouts</button>
         </div>
         <div class="row">
-          <label class="check"><input type="checkbox" id="smokeComms" /> Smoke blocks comms</label>
+          <label class="check" title="Thick smoke between two radios cuts the link"><input type="checkbox" id="smokeComms" checked /> Smoke blocks comms</label>
         </div>
       </section>
 
@@ -117,6 +123,7 @@
         <h2>View</h2>
         <div class="row">
           <label class="check"><input type="checkbox" id="links" checked /> Comms links</label>
+          <label class="check" title="Pairs that are in radio range but cut off, dashed and coloured by cause"><input type="checkbox" id="blocked" checked /> Broken links</label>
           <label class="check"><input type="checkbox" id="smoke" checked /> Smoke</label>
           <label class="check"><input type="checkbox" id="clouds" checked /> Teammate guesses</label>
           <label class="check"><input type="checkbox" id="sensors" checked /> Sensor range</label>
@@ -128,6 +135,12 @@
           <span><i style="background:#b388ff"></i>base</span>
           <span><i style="background:#80ed99"></i>scouting</span>
           <span><i style="background:#e0e0e0"></i>idle</span>
+        </div>
+        <div class="legend">
+          <span><i class="dash" style="background:#8ff3ff"></i>link</span>
+          <span><i class="dash cut" style="color:#ffb703"></i>cut by hill</span>
+          <span><i class="dash cut" style="color:#e3e6ea"></i>by smoke</span>
+          <span><i class="dash cut" style="color:#c77dff"></i>by blackout</span>
         </div>
       </section>
 

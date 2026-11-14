@@ -28,8 +28,12 @@ export interface Config {
   smokeEmission: number;
   smokeDecay: number;
   thickSmoke: number; // density above which smoke counts as thick
-  smokeBlocksComms: boolean; // optional rule; off by default (radio barely notices smoke)
+  smokeBlocksComms: boolean; // thick smoke between two radios cuts the link (the spec: "treat as infinite distance")
   smokeBlocksSensing: boolean; // thick smoke shrinks a drone's sensor radius
+  // "massed": a burning tile only smokes heavily when the tiles around it are burning too, so
+  // one isolated tile can never make thick smoke. "legacy": every burning tile emits in full.
+  smokeModel: "legacy" | "massed";
+  smokeMassTiles: number; // burning tiles (in a tile's 3x3 block, itself included) needed for full emission
 
   // Wind
   windDrift: boolean; // wind slowly changes direction and speed
@@ -43,6 +47,9 @@ export interface Config {
   commsRange: number;
   baseCommsRange: number;
   batteryDrain: number;
+  climbDrain: number; // extra battery per unit of height gained
+  descentDrain: number; // extra battery per unit of height lost (0 = descending is free)
+  spawnInLine: boolean; // drones start lined up on the pad instead of scattered around it
   fireDamage: number; // damage per tick flying over burning tiles
   smokeDamage: number; // damage per tick per unit of smoke
   decisionInterval: number; // ticks between re-planning
@@ -50,6 +57,17 @@ export interface Config {
   // Base
   satellitePeriod: number; // base gets a fresh true map every N ticks (0 = never)
   baseOutageAt: number; // tick at which base comms fail (-1 = never)
+
+  // Relay towers: fixed radio masts on high ground that relay between whoever can see them.
+  // They hold no map and make no decisions, and are lost for good if their tile burns.
+  towers: number;
+  towerRange: number;
+  towerHeight: number; // antenna height above the terrain
+
+  // Regrowth: burnt ground comes back after a while, but only next to healthy vegetation.
+  regrowth: boolean;
+  regrowAfter: number; // ticks a tile must stay burnt before it can regrow
+  regrowChance: number; // chance per tick after that, while it has a healthy neighbour
 
   // Coordination
   zoneSize: number; // task zones are zoneSize x zoneSize blocks
@@ -81,8 +99,10 @@ export const defaultConfig: Config = {
   smokeEmission: 0.12,
   smokeDecay: 0.9,
   thickSmoke: 0.8,
-  smokeBlocksComms: false,
+  smokeBlocksComms: true,
   smokeBlocksSensing: true,
+  smokeModel: "massed",
+  smokeMassTiles: 5,
 
   windDrift: true,
 
@@ -94,6 +114,9 @@ export const defaultConfig: Config = {
   commsRange: 14,
   baseCommsRange: 20,
   batteryDrain: 0.0009,
+  climbDrain: 0.0006,
+  descentDrain: 0.0003,
+  spawnInLine: true,
   fireDamage: 0.006,
   smokeDamage: 0.0015,
   decisionInterval: 3,
@@ -101,8 +124,28 @@ export const defaultConfig: Config = {
   satellitePeriod: 0,
   baseOutageAt: -1,
 
+  towers: 0,
+  towerRange: 20,
+  towerHeight: 8,
+
+  regrowth: true,
+  regrowAfter: 400,
+  regrowChance: 0.004,
+
   zoneSize: 6,
   stickiness: 1.25,
   trackerParticles: 40,
   trackerTimescale: 120,
+};
+
+// Everything added since the original 2D version, switched off. With these overrides the
+// sim is bit-for-bit the one in BASIC/ (`npm run experiment -- --legacy` proves it against
+// the committed BASIC/results/summary.csv). New behaviours must add their "off" value here.
+export const legacyConfig: Partial<Config> = {
+  smokeBlocksComms: false,
+  smokeModel: "legacy",
+  descentDrain: 0,
+  spawnInLine: false,
+  towers: 0,
+  regrowth: false,
 };

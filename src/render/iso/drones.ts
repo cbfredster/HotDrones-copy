@@ -265,7 +265,15 @@ export class DroneLayer {
       this.screenY[k] = this.screen.y;
       const el = this.labels[k];
       el.style.transform = `translate(${this.screen.x.toFixed(1)}px, ${(this.screen.y - 18).toFixed(1)}px) translate(-50%, -100%)`;
-      const state = (dead ? "dead" : d.state) + (k === selected ? " sel" : "");
+      // Climbing (and, if enabled, descending) costs extra battery: mark it on the label.
+      let vertical = "";
+      if (!dead && d.state !== "charging") {
+        const dh =
+          terrainHeightAt(world.terrain, this.curX[k], this.curY[k]) - terrainHeightAt(world.terrain, this.prevX[k], this.prevY[k]);
+        if (dh > 0.25 && cfg.climbDrain > 0) vertical = " climb";
+        else if (dh < -0.25 && cfg.descentDrain > 0) vertical = " descend";
+      }
+      const state = (dead ? "dead" : d.state) + vertical + (k === selected ? " sel" : "");
       if (state !== this.lastState[k]) {
         this.lastState[k] = state;
         el.className = "dlabel " + state;

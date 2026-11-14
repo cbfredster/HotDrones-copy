@@ -91,3 +91,44 @@ so a later session (human or agent) doesn't undo working code. Mirrored into Ent
 - **Performance (measured headless):** 0.43 ms of JS per frame mid-fire, 0.58 ms per sim tick, ~50 draw
   calls, ~470k triangles including the shadow pass; ~50 fps on a *software* rasteriser. Not measured on a
   physical laptop GPU.
+
+## Step 3 — spec gaps in the sim
+
+Every item is a `Config` option. `legacyConfig` (in `src/sim/config.ts`) is the single place that lists the
+"off" value of each, and **`npm run experiment:legacy-check` proves the sim has not drifted**: it runs the
+sweep with `--legacy` and requires `results/legacy/summary.csv` to equal `BASIC/results/summary.csv` byte for
+byte (passed: 25 of 25 conditions identical). Anything new must add its off-value to `legacyConfig`.
+
+| Option | 3D default | Legacy | Why this default |
+|---|---|---|---|
+| `smokeModel` | `"massed"` | `"legacy"` | Spec: "must have multiple tiles for it to be smoky". |
+| `smokeMassTiles` | 5 | – | See below. |
+| `smokeBlocksComms` | `true` | `false` | Spec: smoke between drones is "infinite distance". Toggle kept. |
+| `descentDrain` | 0.0003 | 0 | Spec: durability drops "going up or going down". Half the climb cost (`climbDrain` 0.0006, formerly a literal). |
+| `spawnInLine` | `true` | `false` | Spec: "number of drones to start with in a line". 0.8 tiles apart, centred on the base; uses no random numbers. |
+| `droneCount` | 10 | 10 | Slider 1–30, applied on New run. |
+| `regrowth` | `true` | `false` | Spec: burnt tiles regrow "after a certain timestep and neighbouring conditions". |
+| `regrowAfter` / `regrowChance` | 400 / 0.004 | – | Slow enough not to change short runs: outcomes over 12 seeds were identical with it on or off. |
+| `towers` | 0 | 0 | Not in the original brief; added because step 6 asks for a "towers" condition. Slider 0–4. |
+
+- **Massed smoke.** A burning tile's emission is scaled by `min(1, burningTilesIn3x3 / smokeMassTiles)²`.
+  Measured with tiles pinned at maximum severity: one tile peaks at 0.13 at any wind speed (thick is 0.8; the
+  old model reached 3.24), a pair at 0.52, and it takes four or more clustered tiles to make thick smoke in
+  any wind. A fire front two or more tiles deep smokes exactly as before.
+- **Regrowth** has its own RNG stream (`seed * 104729 + 71`), so switching it on cannot change which tiles the
+  fire reaches. A burnt tile needs a healthy (unburnt, flammable) 4-neighbour to regrow. With regrowth on,
+  `burntCount()` is the cumulative area ever burnt, so the headline metric cannot shrink.
+- **"Towers" = relay towers** (my reading; say if you meant something else). Fixed masts on the highest dry
+  ground, placed deterministically (no RNG), with ids below `BASE_ID`. They relay only: no map, no claims, no
+  decisions. A tower is destroyed for good when its tile burns, so judges can cut the network by burning one.
+- **`linkBlockReason(a, b, …)`** in `comms.ts` mirrors `canLink` check for check and returns
+  `{reason: "hill" | "smoke" | "blackout", x, y, z}` or null. `canLink` is unchanged. Checked on 282,048
+  pair-ticks: it is non-null exactly when a pair is in range and `canLink` is false.
+- `World.networkNodes` keeps the nodes the current network was built from, so the renderer's dashed
+  "broken link" lines are computed from the same positions as the solid ones (every in-range pair is one or
+  the other, never both). `World.commsNodes()` replaces the private `buildNet()`.
+- **Visuals:** dashed links coloured by cause (hill amber, smoke white, blackout purple) with a marker where
+  the line is cut; red-and-white towers that char and lean when burnt; light-green ground and saplings on
+  regrown tiles for 360 ticks; ▲ / ▼ on a drone's label while it pays the climb / descent cost; smoke puffs
+  that are wisps over lone fires.
+- Root `results/` still holds the original (legacy-default) numbers; they are regenerated in step 6.

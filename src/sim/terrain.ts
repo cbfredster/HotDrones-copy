@@ -162,3 +162,33 @@ export function neighbours4(x: number, y: number, w: number, h: number): number[
 }
 
 export const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
+
+/**
+ * Sites for relay towers: the highest dry ground, spread out, away from the map edge,
+ * the base and the village. Deterministic (no randomness), so it needs no RNG stream.
+ */
+export function pickTowerSites(t: Terrain, count: number): { x: number; y: number }[] {
+  const sites: { x: number; y: number }[] = [];
+  if (count <= 0) return sites;
+  const v = t.village[4] ?? t.village[0];
+  const keepOut = [
+    { x: t.base.x, y: t.base.y, r: 12 },
+    { x: v % t.w, y: Math.floor(v / t.w), r: 5 },
+  ];
+  const order: number[] = [];
+  for (let i = 0; i < t.w * t.h; i++) order.push(i);
+  order.sort((a, b) => t.height[b] - t.height[a] || a - b); // highest first, index breaks ties
+  const margin = 4;
+  const spacing = Math.max(8, Math.min(t.w, t.h) / 3.5);
+  for (const i of order) {
+    if (sites.length >= count) break;
+    const x = i % t.w;
+    const y = Math.floor(i / t.w);
+    if (t.type[i] === Tile.Water) continue;
+    if (x < margin || y < margin || x >= t.w - margin || y >= t.h - margin) continue;
+    if (keepOut.some((k) => Math.hypot(k.x - x, k.y - y) < k.r)) continue;
+    if (sites.some((s) => Math.hypot(s.x - x, s.y - y) < spacing)) continue;
+    sites.push({ x, y });
+  }
+  return sites;
+}

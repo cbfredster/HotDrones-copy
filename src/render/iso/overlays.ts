@@ -20,6 +20,7 @@ import {
   Vector2,
   Vector3,
 } from "three";
+import { BlockedLink, linkBlockReason } from "../../sim/comms";
 import { World } from "../../sim/world";
 import { STATE_COLOUR, TEAM_COLOURS, ViewOptions } from "../renderer";
 import { TerrainLayer } from "./terrain";
@@ -30,6 +31,8 @@ const MAX_LINKS = 1024;
 const MAX_DASHES = 3000;
 const RING_DOTS = 72;
 const BLACKOUT = 0xc77dff;
+/** Dash colours for pairs that are in range but cut off, by cause. */
+export const BLOCK_COLOUR: Record<BlockedLink["reason"], number> = { hill: 0xffb703, smoke: 0xe3e6ea, blackout: 0xc77dff };
 
 export interface HoverState {
   tile: number | null;
@@ -56,6 +59,8 @@ export class OverlayLayer {
   private readonly colour = new Color();
   private dashCount = 0;
   private dotCount = 0;
+  private blocked: { a: number; b: number; why: BlockedLink }[] = [];
+  private blockedTick = -1;
 
   constructor(private world: World, private terrain: TerrainLayer) {
     const box = new BoxGeometry(1, 1, 1);
@@ -140,6 +145,27 @@ export class OverlayLayer {
     uploadUsed(this.beams.instanceMatrix, n);
     uploadUsed(this.glow.instanceMatrix, n);
 
+    // ------------------------------------------------------------ broken links, by cause
+    // Pairs that are within radio range but cannot talk: dashed, coloured by what is in
+    // the way, with a marker where the line is cut. Watch them snap as drones pass behind
+    // hills or into smoke.
+    if (view.showBlocked) {
+      this.syncBlocked();
+      const march = time * 0.9;
+      for (const bl of this.blocked) {
+        const pa = nodePos(bl.a);
+        const pb = nodePos(bl.b);
+        if (!pa || !pb) continue;
+        const hex = BLOCK_COLOUR[bl.why.reason];
+        this.addDashes(pa, pb, hex, 1.6 * pxToWorld, 0.32, 0.3, march);
+        if (this.dotCount < this.dots.instanceMatrix.count) {
+          const sz = 5.5 * pxToWorld;
+          setInstance(this.dots, this.dotCount, bl.why.x, bl.why.z * V_SCALE, bl.why.y, sz, sz, sz, Math.PI / 4);
+          this.dots.setColorAt(this.dotCount++, this.colour.set(hex));
+        }
+      }
+    }
+
     // ------------------------------------------------------------ blackout zones
     this.syncDomes();
     const breathe = 0.16 + 0.04 * Math.sin(time * 1.6);
@@ -212,6 +238,29 @@ export class OverlayLayer {
     this.dots.count = this.dotCount;
     uploadUsed(this.dots.instanceMatrix, this.dotCount);
     uploadUsed(this.dots.instanceColor, this.dotCount);
+  }
+
+  /**
+   * Recompute the cut-off pairs once per tick, from exactly the nodes the sim built its
+   * network from (world.networkNodes), so every in-range pair is either a solid link or
+   * a dashed one with a reason, never both and never neither.
+   */
+  private syncBlocked() {
+    const world = this.world;
+    if (world.tick === this.blockedTick) return;
+    this.blockedTick = world.tick;
+    this.blocked.length = 0;
+    const nodes = world.networkNodes;
+    const linked = new Set<number>();
+    const key = (a: number, b: number) => (a + 64) * 4096 + (b + 64);
+    for (const [a, b] of world.network.links) linked.add(key(a, b));
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        if (linked.has(key(nodes[i].id, nodes[j].id))) continue;
+        const why = linkBlockReason(nodes[i], nodes[j], world.terrain, world.env, world.blackouts, world.cfg);
+        if (why) this.blocked.push({ a: nodes[i].id, b: nodes[j].id, why });
+      }
+    }
   }
 
   /** The radius the selected drone can actually see right now (thick smoke shrinks it, as in Drone.sense). */

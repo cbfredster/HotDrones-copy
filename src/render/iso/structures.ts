@@ -16,7 +16,7 @@ import {
   Vector3,
 } from "three";
 import { BASE_MAST_HEIGHT, terrainHeightAt } from "../../sim/comms";
-import { World } from "../../sim/world";
+import { Tower, World } from "../../sim/world";
 import { TerrainLayer, TileVis } from "./terrain";
 import { V_SCALE, hash01, rgb, setInstance } from "./util";
 
@@ -32,6 +32,10 @@ const MAST_DARK = rgb(0x4a4f57);
 const BEACON_ON = new Color(0x4dff9a);
 const BEACON_DIM = new Color(0x1c7a47);
 const BEACON_OFF = new Color(0x3a2326);
+const TOWER_RED = rgb(0xe5484d);
+const TOWER_WHITE = rgb(0xf2f4f7);
+const TOWER_BEACON = new Color(0xff5d73);
+const TOWER_BURNT = rgb(0x221c1a);
 
 /** A gable roof: a triangular prism, ridge along Z, base on y = 0. */
 function gableRoof(halfW: number, halfL: number, height: number): BufferGeometry {
@@ -74,6 +78,8 @@ export class StructureLayer {
   private readonly pulses: Mesh[] = [];
   private online = true;
   private readonly tmp = new Color();
+  private readonly towerTops = new Map<number, Vector3>(); // comms node id -> antenna tip
+  private readonly towerMeshes: { tower: Tower; group: Group; beacon: Mesh; standing: boolean }[] = [];
 
   constructor(private world: World, terrain: TerrainLayer) {
     const { w, h } = world.terrain;
@@ -185,6 +191,46 @@ export class StructureLayer {
       this.group.add(ring);
     }
     this.group.add(base);
+
+    // ---------------------------------------------------------------- relay towers
+    // Red-and-white lattice masts. The tip is exactly the tower's comms node
+    // (terrain + cfg.towerHeight), on the same vertical scale as everything else.
+    for (const tower of world.towers) {
+      const tile = tower.y * w + tower.x;
+      this.reserved.add(tile);
+      const footY = terrain.topY[tile];
+      const tipY = (terrainHeightAt(world.terrain, tower.x, tower.y) + world.cfg.towerHeight) * V_SCALE;
+      const len = Math.max(0.8, tipY - footY);
+      const g = new Group();
+      g.position.set(tower.x, footY, tower.y);
+      const bands = 5;
+      for (let k = 0; k < bands; k++) {
+        const seg = new Mesh(
+          new BoxGeometry(0.16 - 0.015 * k, len / bands, 0.16 - 0.015 * k).translate(0, len / bands / 2, 0),
+          new MeshLambertMaterial({ color: k % 2 === 0 ? TOWER_RED.clone() : TOWER_WHITE.clone(), flatShading: true }),
+        );
+        seg.position.y = (len / bands) * k;
+        seg.castShadow = true;
+        g.add(seg);
+      }
+      for (const frac of [0.55, 0.8]) {
+        const arm = new Mesh(new BoxGeometry(0.62, 0.05, 0.05), new MeshLambertMaterial({ color: TOWER_WHITE.clone(), flatShading: true }));
+        arm.position.y = len * frac;
+        arm.castShadow = true;
+        g.add(arm);
+      }
+      const beacon = new Mesh(new BoxGeometry(0.22, 0.22, 0.22), new MeshBasicMaterial({ color: TOWER_BEACON.clone() }));
+      beacon.position.y = len;
+      g.add(beacon);
+      this.group.add(g);
+      this.towerTops.set(tower.id, new Vector3(tower.x, footY + len, tower.y));
+      this.towerMeshes.push({ tower, group: g, beacon, standing: true });
+    }
+  }
+
+  /** Antenna tip of a relay tower (by comms node id), or undefined. */
+  towerTop(id: number): Vector3 | undefined {
+    return this.towerTops.get(id);
   }
 
   private paintHouse(k: number, vis: TileVis, fog: number) {
@@ -215,6 +261,21 @@ export class StructureLayer {
       beacon.color.copy(phase < 0.12 || (phase > 0.22 && phase < 0.34) ? BEACON_ON : BEACON_DIM);
     } else {
       beacon.color.copy(BEACON_OFF);
+    }
+    for (const t of this.towerMeshes) {
+      const mat = t.beacon.material as MeshBasicMaterial;
+      if (t.tower.alive) {
+        mat.color.copy((time * 1.2 + t.tower.x * 0.37) % 1 < 0.5 ? TOWER_BEACON : BEACON_OFF);
+      } else if (t.standing) {
+        // Burnt down: charred, leaning, dark.
+        t.standing = false;
+        mat.color.copy(BEACON_OFF);
+        t.group.rotation.z = 0.22;
+        t.group.traverse((o) => {
+          const m = (o as Mesh).material as MeshLambertMaterial | undefined;
+          if (m && o !== t.beacon) m.color.copy(TOWER_BURNT);
+        });
+      }
     }
     this.pulses.forEach((ring, k) => {
       const mat = ring.material as MeshBasicMaterial;

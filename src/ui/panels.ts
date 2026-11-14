@@ -20,7 +20,9 @@ export function updateStats(world: World) {
     <span>Area burnt</span><b>${m.burnt} tiles</b>
     <span>Drones</span><b>${alive}/${world.drones.length} flying</b>
     <span>Water drops</span><b>${m.waterDropped}</b>
-    <span>Base comms</span><b class="${world.baseOnline ? "good" : "bad"}">${world.baseOnline ? "online" : "down"}</b>
+    <span>Base comms</span><b class="${world.baseOnline ? "good" : "bad"}">${world.baseOnline ? "online" : "down"}</b>${
+      world.towers.length ? `\n    <span>Relay towers</span><b>${world.towers.filter((t) => t.alive).length}/${world.towers.length} standing</b>` : ""
+    }
     <span>Comms groups</span><b>${world.network.components.length}</b>`;
   drawChart(world);
 }
@@ -89,6 +91,8 @@ function tileHtml(world: World, tile: number): string {
   if (terrain.village.includes(tile)) tags.push("village");
   if (Math.round(world.base.x) === x && Math.round(world.base.y) === y) tags.push("home base");
   if (type === Tile.Water) tags.push("water source");
+  const tower = world.towers.find((t) => t.x === x && t.y === y);
+  if (tower) tags.push(tower.alive ? "relay tower" : `relay tower (burnt down at t=${tower.lostAt})`);
 
   let fireText: string;
   if (fire === Fire.Burning) {
@@ -97,6 +101,7 @@ function tileHtml(world: World, tile: number): string {
     fireText = env.wetness[tile] >= 0.5 ? "<b>extinguished</b> (wet)" : "<b>burnt out</b>";
   } else {
     fireText = FUEL[type].ignite > 0 ? '<b class="good">unburnt</b>' : "<b>cannot burn</b>";
+    if (env.regrownAt[tile] >= 0) fireText += ` · regrew at t=${env.regrownAt[tile]}`;
   }
 
   const smoke = env.smoke[tile];

@@ -37,6 +37,7 @@ const view: IsoViewOptions = {
   showSmoke: true,
   showClouds: true,
   showSensors: true,
+  showBlocked: true,
   hoverRadius: 0,
 };
 
@@ -73,7 +74,7 @@ function startRun(cfg: Partial<Config>, actions?: RecordedAction[]) {
   $<HTMLSelectElement>("mode").value = world.cfg.mode;
   syncControls(true);
   // Handy in the browser console, and used by the headless checks.
-  Object.assign(window as any, { world, view, iso, hot: { stepOnce, judge, setPlaying, setTps } });
+  Object.assign(window as any, { world, view, iso, hot: { stepOnce, judge, setPlaying, setTps, startRun } });
 }
 
 function newRunFromControls() {
@@ -82,6 +83,9 @@ function newRunFromControls() {
     mode: $<HTMLSelectElement>("mode").value as Mode,
     commsRange: Number(input("range").value),
     smokeBlocksComms: input("smokeComms").checked,
+    droneCount: Number(input("droneCount").value),
+    towers: Number(input("towers").value),
+    spawnInLine: input("spawnLine").checked,
   });
 }
 
@@ -111,6 +115,14 @@ function syncControls(force = false) {
   set("range", String(world.cfg.commsRange));
   $("rangeVal").textContent = String(world.cfg.commsRange);
   input("smokeComms").checked = world.cfg.smokeBlocksComms;
+  if (force) {
+    // Run-level settings (they only change on New run, or when a replay / scenario loads).
+    input("droneCount").value = String(world.cfg.droneCount);
+    input("towers").value = String(world.cfg.towers);
+    input("spawnLine").checked = world.cfg.spawnInLine;
+    $("droneCountVal").textContent = String(world.cfg.droneCount);
+    $("towersVal").textContent = String(world.cfg.towers);
+  }
   const cut = world.base.manualOutage;
   $("baseOutage").classList.toggle("on", cut);
   $("baseOutage").textContent = cut ? "Restore base comms" : "Cut base comms";
@@ -179,7 +191,9 @@ $("baseOutage").onclick = () => {
 };
 $("clearBlackouts").onclick = () => judge({ type: "clearBlackouts" });
 $("beliefView").onclick = toggleBelief;
-for (const [id, key] of [["links", "showLinks"], ["smoke", "showSmoke"], ["clouds", "showClouds"], ["sensors", "showSensors"]] as const) {
+input("droneCount").oninput = () => ($("droneCountVal").textContent = input("droneCount").value);
+input("towers").oninput = () => ($("towersVal").textContent = input("towers").value);
+for (const [id, key] of [["links", "showLinks"], ["blocked", "showBlocked"], ["smoke", "showSmoke"], ["clouds", "showClouds"], ["sensors", "showSensors"]] as const) {
   input(id).onchange = () => (view[key] = input(id).checked);
 }
 $("camLeft").onclick = () => iso.rotate(-1);

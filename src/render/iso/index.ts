@@ -30,6 +30,7 @@ import { disposeTree } from "./util";
 
 export { V_SCALE } from "./util";
 
+/** `showBlocked` (from ViewOptions) draws in-range pairs that are cut off, dashed and coloured by cause. */
 export interface IsoViewOptions extends ViewOptions {
   /** Radius (tiles) of a preview circle around the hovered tile; 0 or undefined for none. */
   hoverRadius?: number;
@@ -45,6 +46,7 @@ export interface PickResult {
 }
 
 const FOG_LEVELS = 7;
+const REGROW_STAGE_TICKS = 120; // regrown ground looks young for three stages of this length
 const FOG_TICKS = 300; // a tile this long unseen is as dark as it gets (same scale as the 2D view)
 
 export class IsoRenderer {
@@ -204,6 +206,7 @@ export class IsoRenderer {
   /** World-space position of a comms node: a drone, or the tip of the base mast. */
   private nodePos = (id: number): Vector3 | null => {
     if (id === BASE_ID) return this.structures.mastTop;
+    if (id < BASE_ID) return this.structures.towerTop(id) ?? null;
     return this.drones.pos[id] ?? null;
   };
 
@@ -225,6 +228,7 @@ export class IsoRenderer {
       let wetQ = 0;
       let fogQ = 0;
       let fuelQ = 3;
+      let youngQ = 0; // 3 = just regrown ... 0 = mature
       if (f === Fire.Burning) {
         vis = TileVis.Burning;
         if (!source) {
@@ -236,18 +240,22 @@ export class IsoRenderer {
         vis = !source && env.wetness[i] >= 0.5 ? TileVis.Extinguished : TileVis.BurntOut;
       } else {
         vis = TileVis.Unburnt;
-        if (!source) wetQ = Math.min(7, Math.ceil(env.wetness[i] * 7));
+        if (!source) {
+          wetQ = Math.min(7, Math.ceil(env.wetness[i] * 7));
+          const regrown = env.regrownAt[i];
+          if (regrown >= 0) youngQ = Math.max(0, 3 - Math.floor((tick - regrown) / REGROW_STAGE_TICKS));
+        }
       }
       if (source) {
         const seen = source.lastSeen[i];
         fogQ = seen < 0 ? FOG_LEVELS : Math.min(FOG_LEVELS, Math.floor(((tick - seen) / FOG_TICKS) * (FOG_LEVELS + 1)));
       }
-      const key = vis | (wetQ << 2) | (fogQ << 5) | (fuelQ << 8);
+      const key = vis | (wetQ << 2) | (fogQ << 5) | (fuelQ << 8) | (youngQ << 10);
       if (key === this.keys[i]) continue;
       this.keys[i] = key;
       const fog = fogQ / FOG_LEVELS;
-      this.terrain.applyTile(i, vis, wetQ / 7, fog);
-      this.trees.applyTile(i, vis, fog, (fuelQ + 1) / 4);
+      this.terrain.applyTile(i, vis, wetQ / 7, fog, youngQ / 3);
+      this.trees.applyTile(i, vis, fog, (fuelQ + 1) / 4, youngQ / 3);
       this.structures.applyTile(i, vis, fog);
       this.fire.applyTile(i, vis, now, tick);
     }

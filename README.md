@@ -12,6 +12,7 @@ npm install
 npm run dev          # the isometric 3D app (http://localhost:5173)
 npm run experiment   # headless: 30 seeds x every condition -> results/ (about 2.5 min)
 npm run typecheck
+npm run experiment:legacy-check   # proves the sim still reproduces the frozen 2D results exactly
 ```
 
 In the 3D view: drag to pan, wheel to zoom, **Q/E** rotate 90° (hills hide things), **R** resets the view,
