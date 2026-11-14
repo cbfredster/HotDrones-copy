@@ -5,9 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:basic": "vite BASIC --port 5174 --strictPort",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "experiment": "tsx scripts/experiment.ts"
+    "typecheck:basic": "tsc --noEmit -p BASIC",
+    "experiment": "tsx scripts/experiment.ts",
+    "experiment:basic": "cd BASIC && tsx scripts/experiment.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

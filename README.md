@@ -16,6 +16,15 @@ npm run typecheck
 
 Open `results/report.html` after running the experiments for the charts.
 
+The original top-down 2D version is frozen in [`BASIC/`](BASIC/README.md) (tag `v-2d-basic`):
+
+```bash
+npm run dev:basic         # the 2D app on http://localhost:5174, side by side with the main app
+npm run experiment:basic  # its experiments; results land in BASIC/results/
+```
+
+The original brief is in [`PROJECT_OVERVIEW.md`](PROJECT_OVERVIEW.md); calls made along the way are logged in [`DECISIONS.md`](DECISIONS.md).
+
 ## Results (30 random maps per condition)
 
 | Condition | Swarm (ours) | Central control | No coordination | No drones |
