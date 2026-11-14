@@ -1,31 +1,61 @@
-Project Overview: 
+Project Overview:
 
-Land: 
-Isometric vie wf regualr tiles
+Land:
+Isometric view of regular tiles
+
+The tiles form a landscape of coniferous forest and each tile has an associated height making it a hilly/mountainous scene.
 
 Each tile has its own properties and can be in one of three states:
-- On fire
-- Burnt (regrows after a certain timestep and neighbouring conditions)
-- Not on fire
 
-Each tile has assocated properties that affect its behaviour as well as an associated height. 
+On fire
+Burnt (regrows after a certain timestep and neighbouring conditions)
+Not on fire
+
+Each tile has associated properties that affect its behaviour as well as an associated height.
 
 Land can be of the default 4 types:
-- grass 
-- forest 
-- sand 
+- grass
+- forest
+- sand
 - rocky
 - water
-The type affects if it can sbe set on fire and how 
+The type affects if it can be set on fire and how
 
-Fire: 
+Fire:
 
-Fire can spread to neighbouring tiles with a certain porbability depdending in a few factors: 
-- wind(affects tiles directionally)
-- fuel (whats on the tiles)
-- Slope (fire spreads easier up a slope)
+Fire can spread to neighbouring tiles with a certain probability depending in a few factors:
 
+wind(affects tiles directionally)
+fuel (whats on the tiles)
+Slope (fire spreads easier up a slope)
+-fire severity and pre-existing area of fire
 
+Fire can have different severity affecting how long its going to last for, how much water it needs to be put out with
 
+Fires produce smoke which sits above the fire, dispersing over time once the tile is not on fire, must have multiple tiles for it to be smoky
 
+Drones:
 
+Drones start from a home base and go to collect water from water sources (e.g. river pond reservoir)
+
+When the drones can communicate they make interlinked decisions about how to most effectively as a group extinguish the fire
+
+However sometimes they cannot communicate with each other:
+
+-when they are out of range
+-when there is smoke between them (treat as infinite distances)
+-when there hills between them (treat as infinite distance)
+
+drones have a durability that diminishes over time but can be sped of by different factors such as wind, going up or going down etc
+
+Drones can fly over fire and in smoke, but it means their durability decreases much quicker. if the drones lose all durability they break and are lost for good.
+
+Drones must return to the home base to replenish their durability.
+
+Drones have their own map of where the fire are based on the initial map they get from home-base and also can share them with other drones to inform others on the current situation and how to solve them
+
+When drones are in range of base/ go to recharge, they share their map so that the home base has a more complete map of where the fire is that it can share with drones,
+
+In the case that a drone has a fire map with no fire on it , it goes back to homebase to get the firemaps from them
+
+Drones can share their maps of the fire, the more recent one is taken to be more accurate.
