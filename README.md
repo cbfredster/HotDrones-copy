@@ -29,6 +29,35 @@ npm run experiment:basic  # its experiments; results land in BASIC/results/
 
 The original brief is in [`PROJECT_OVERVIEW.md`](PROJECT_OVERVIEW.md); calls made along the way are logged in [`DECISIONS.md`](DECISIONS.md).
 
+## Sponsor integrations (all optional)
+
+`npm run dev` also starts a small server (`server/`) for the integrations. With no keys the demo still runs:
+each integration switches itself off and shows a grey status dot in the header. To switch them on:
+
+```bash
+cp .env.example .env     # then paste in the keys you have; .env is gitignored
+npm run db:migrate       # once, after setting TIGER_DATABASE_URL
+npm run dev
+```
+
+| Integration | Key in `.env` | What judges see | Without the key |
+|---|---|---|---|
+| Tiger Data | `TIGER_DATABASE_URL` | `dashboard.html`: live fire growth, connectivity, battery spread; experiment comparison | Live charts from server memory |
+| Gemini | `GEMINI_API_KEY` | AI incident commander: sitreps labelled with how stale the base's picture is, typed commands behind a confirm chip, after-action report | Built-in sitreps and a basic command parser |
+| ElevenLabs | `ELEVENLABS_API_KEY` | Dispatcher and drone radio voices; `npm run audio:generate` makes effects and music for `public/audio/` | Browser speech and synthesised sound |
+| MongoDB Atlas | `MONGODB_URI` | Scenario share links (`?scenario=<id>`) and the "Challenge the swarm" board (`board.html`) | A local file on the server |
+| Vultr | – | Hosting and big sweeps: see [`docs/deploy-vultr.md`](docs/deploy-vultr.md) | – |
+
+Press **Sound** in the header to hear the swarm: drones that can reach each other play in time, and a group
+that is cut off drifts out of time until it reconnects.
+
+```bash
+npm run experiment -- 30 --workers 8   # same results, on 8 threads
+npm run experiment -- 30 --db          # also stream the runs into Tiger Data
+npm run test:integrations              # end-to-end check, needs no keys
+npm run build && npm start             # production: one server on http://localhost:8787
+```
+
 ## Results (30 random maps per condition)
 
 | Condition | Swarm (ours) | Central control | No coordination | No drones |
