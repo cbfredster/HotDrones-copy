@@ -3,6 +3,8 @@
 import { BASE_ID, inBlackout } from "../sim/comms";
 import { Fire } from "../sim/environment";
 import { FUEL, TILE_NAMES, Tile } from "../sim/terrain";
+import type { Drone } from "../sim/drone";
+import { FEATURE_NAMES } from "../sim/unified";
 import { World } from "../sim/world";
 import { $ } from "./dom";
 
@@ -76,6 +78,8 @@ function droneHtml(world: World, id: number): string {
     ${
       world.cfg.mode === "central"
         ? `<p class="hint">Central mode: follows base's orders (${d.orders ? "zone " + d.orders.zone : "none"}).</p>`
+        : world.cfg.mode === "unified" && world.unified
+        ? unifiedHtml(world, d)
         : world.cfg.mode === "cbba"
         ? `<table><tr><th>Plan</th><th>Zone</th><th>Winning bid</th></tr>${
             d.cbba.path.map((id, k) => `<tr><td>${k === 0 ? "▶ now" : `then ${k + 1}`}</td><td>${id.replace("#", " slot ")}</td><td>${(d.cbba.table.get(id)?.bid ?? 0).toFixed(2)}</td></tr>`).join("") ||
@@ -85,6 +89,30 @@ function droneHtml(world: World, id: number): string {
         : `<table><tr><th>Zone</th><th>Bid</th><th>Already taken by</th></tr>${rows}</table>
            <p class="hint">"Already taken" counts teammates with better bids, plus a probability for out-of-contact teammates the drone thinks are still there.</p>`
     }`;
+}
+
+function unifiedHtml(world: World, d: Drone): string {
+  const u = world.unified!;
+  const ag = u.agent(d.id);
+  const nd = u.node(d.id);
+  const st = u.stats();
+  const plan =
+    d.cbba.path.map((id, k) => `<tr><td>${k === 0 ? "▶ now" : `then ${k + 1}`}</td><td>${id.replace("#", " slot ")}</td><td>${(d.cbba.table.get(id)?.bid ?? 0).toFixed(2)}</td></tr>`).join("") ||
+    `<tr><td colspan="3">No zone won: reinforcing the busiest one</td></tr>`;
+  const att = ag.attention.slice(0, 3).map((a) => `#${a.id} ${(a.a * 100).toFixed(0)}%`).join(", ") || "—";
+  const theta = FEATURE_NAMES.map((n, k) => `${n} ${ag.theta[k] >= 0 ? "+" : ""}${ag.theta[k].toFixed(2)}`).join(", ");
+  const saving = st.fullSyncBytes > 0 ? (st.fullSyncBytes / Math.max(1, st.bytesSent)).toFixed(0) + "×" : "—";
+  return `<table><tr><th>CBBA plan</th><th>Zone</th><th>Winning bid</th></tr>${plan}</table>
+    <div class="stats">
+      <span>DTN store</span><b>${nd.store.size} bundles carried</b>
+      <span>Sent / suppressed</span><b>${nd.entriesSent} / ${nd.entriesSuppressed} changes (IB)</b>
+      <span>CI fusions</span><b>${nd.fusions} agree, ${nd.conflicts} conflicts</b>
+      <span>Attention</span><b>${att}</b>
+      <span>Policy θ</span><b>${theta}</b>
+      <span>Last reward</span><b>${ag.lastReward.toFixed(2)} (${ag.updates} updates)</b>
+      <span>Swarm bandwidth</span><b>${(st.bytesSent / 1024).toFixed(0)} KB, ${saving} less than map sync</b>
+    </div>
+    <p class="hint">Unified stack: CBBA assigns zones; observations travel as DTN bundles (store-carry-forward), only changes worth their bits (event trigger + Information Bottleneck); maps fuse by Covariance Intersection; a graph-attention policy learned online scales zone values; distributed MPC plans each step around teammates, smoke and fire.</p>`;
 }
 
 function tileHtml(world: World, tile: number): string {

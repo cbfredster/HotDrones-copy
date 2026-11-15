@@ -236,3 +236,18 @@ recorded action log), which is the single write path the ground rules ask for.
 - **First numbers (12 seeds, current defaults):** CBBA 691 tiles burnt, village lost 2/12; swarm 980, 3/12;
   central 2212, 9/12; greedy 1233, 6/12. Same ordering with comms range 6 and with the base offline at tick 120.
 - Not done: fire forecasting inside each drone (the optional half of step 5).
+
+## Step 6 — Unified stack mode
+
+- `unified` is a fifth `Mode`; every other mode is bit-for-bit unchanged (checked against HEAD for cbba, swarm,
+  central and greedy; the legacy check still passes 25/25). Algorithm in `src/sim/unified.ts` (`UnifiedStack`),
+  built in the `World` constructor only in this mode. World hooks: `senseDrone`, `fly`, `zonesFor`,
+  `shareInformation` (DTN instead of `mergeGroup`), docking (`dock`), and `learn` after each drop.
+- CBBA is reused as is; the policy only changes the zone values CBBA sees.
+- Defaults chosen from 60-run checks: `unifiedLearningRate` 0.1 (0.02 barely moved theta), `unifiedProcessNoise`
+  0.05 (0.002 let stale low-variance estimates win: 969 tiles burnt), `unifiedBeta` 0.02 (suppresses ~20% of
+  changes with no measurable loss). `unifiedLinkBytes` 400: raising it to 1e6 changed nothing, so bandwidth is
+  not the bottleneck.
+- The theta prior `[0.2, -0.2, -0.3, -0.4, 0.1]` matters: starting from zero lost the village 7/60.
+- Not done: the Challenge board, dashboard and server challenge still use the original three modes.
+

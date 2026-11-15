@@ -9,6 +9,7 @@ import { Claim, Zone, computeZones } from "./planner";
 import { Rng } from "./rng";
 import { Terrain, Tile, generateTerrain, pickTowerSites } from "./terrain";
 import { TeammateTracker } from "./tracker";
+import { UnifiedStack } from "./unified";
 
 export interface Metrics {
   tick: number;
@@ -52,6 +53,8 @@ export class World {
   /** The config exactly as the run started, before any judge action changed it. */
   readonly initialCfg: Config;
   private zoneCache = new Map<number, Zone[]>();
+  /** The layered CBBA + DTN + IB + CI + MARL + DMPC stack; only built in "unified" mode. */
+  unified: UnifiedStack | null = null;
 
   constructor(cfg: Partial<Config> = {}) {
     this.cfg = { ...defaultConfig, ...cfg };
@@ -84,6 +87,7 @@ export class World {
       d.belief.copyFrom(this.base.belief);
       this.drones.push(d);
     }
+    if (c.mode === "unified") this.unified = new UnifiedStack(this);
     this.towers = pickTowerSites(this.terrain, c.towers).map((s, k) => ({ id: towerNodeId(k), x: s.x, y: s.y, alive: true, lostAt: -1 }));
   }
 
@@ -100,10 +104,13 @@ export class World {
     this.env.step(this.tick);
 
     if (c.satellitePeriod > 0 && this.tick > 0 && this.tick % c.satellitePeriod === 0 && this.baseOnline) {
+      const prevFire = this.unified ? this.base.belief.fire.slice() : null;
+      const prevSev = this.unified ? this.base.belief.severity.slice() : null;
       this.base.belief.observeAll(this.env, this.tick);
+      if (this.unified) this.unified.baseObservedAll(prevFire!, prevSev!);
     }
 
-    for (const d of this.drones) if (d.alive) d.sense(this.env, c, this.tick);
+    for (const d of this.drones) if (d.alive) this.senseDrone(d);
 
     // A relay tower is destroyed when the fire reaches it.
     for (const t of this.towers) {
@@ -116,9 +123,9 @@ export class World {
     this.networkNodes = this.commsNodes();
     this.network = buildNetwork(this.networkNodes, this.terrain, this.env, this.blackouts, c);
     this.shareInformation();
-    if (c.mode === "swarm" || c.mode === "cbba") this.updateTrackers();
+    if (this.usesClaims) this.updateTrackers();
     if (c.mode === "central" && this.tick % c.decisionInterval === 0) this.centralAssign();
-    if (c.mode === "cbba" && this.tick % c.decisionInterval === 0) this.cbbaPlan();
+    if ((c.mode === "cbba" || c.mode === "unified") && this.tick % c.decisionInterval === 0) this.cbbaPlan();
 
     this.zoneCache.clear();
     for (const d of this.drones) if (d.alive) this.act(d);
@@ -174,6 +181,22 @@ export class World {
     return nodes;
   }
 
+  /** Modes where drones share plans ("claims") and track lost teammates. */
+  get usesClaims() {
+    const m = this.cfg.mode;
+    return m === "swarm" || m === "cbba" || m === "unified";
+  }
+
+  private senseDrone(d: Drone) {
+    if (this.unified) this.unified.senseDrone(d);
+    else d.sense(this.env, this.cfg, this.tick);
+  }
+
+  /** Fly one tick towards (tx, ty); unified mode plans the step with distributed MPC. */
+  private fly(d: Drone, tx: number, ty: number) {
+    return this.unified ? this.unified.fly(d, tx, ty) : d.moveTowards(tx, ty, this.env, this.cfg);
+  }
+
   inContact(a: number, b: number) {
     const ca = this.network.componentOf.get(a);
     return ca !== undefined && ca === this.network.componentOf.get(b);
@@ -183,17 +206,23 @@ export class World {
   // In swarm mode they also exchange plans ("claims") and heartbeats.
   private shareInformation() {
     const c = this.cfg;
+    if (this.unified) this.unified.exchange();
     for (const comp of this.network.components) {
       const hasBase = comp.includes(BASE_ID);
       if (c.mode === "central" && !hasBase) continue; // central drones only talk via base
-      const maps: BeliefMap[] = [];
-      for (const id of comp) {
-        if (id === BASE_ID) maps.push(this.base.belief);
-        else if (id >= 0) maps.push(this.drones[id].belief); // towers (id < BASE_ID) only relay
+      if (!this.unified) {
+        const maps: BeliefMap[] = [];
+        for (const id of comp) {
+          if (id === BASE_ID) maps.push(this.base.belief);
+          else if (id >= 0) maps.push(this.drones[id].belief); // towers (id < BASE_ID) only relay
+        }
+        mergeGroup(maps);
+      } else {
+        // Unified: no whole-map swap. Maps move as DTN bundles (below); policies are averaged.
+        this.unified.shareParameters(comp.filter((id) => id >= 0).map((id) => this.drones[id]).filter((d) => d.alive));
       }
-      mergeGroup(maps);
 
-      if (c.mode === "swarm" || c.mode === "cbba") {
+      if (this.usesClaims) {
         const members = comp.filter((id) => id >= 0).map((id) => this.drones[id]);
         // Heartbeat: each member republishes its plan with its current position.
         const merged = new Map<number, Claim>();
@@ -257,8 +286,11 @@ export class World {
       d.battery = Math.min(1, d.battery + 0.03);
       d.damage = Math.max(0, d.damage - 0.03);
       // Docked: swap maps with base by cable, even if base radio is down.
-      d.belief.mergeFrom(this.base.belief);
-      this.base.belief.mergeFrom(d.belief);
+      if (this.unified) this.unified.dock(d);
+      else {
+        d.belief.mergeFrom(this.base.belief);
+        this.base.belief.mergeFrom(d.belief);
+      }
       if (d.battery >= 1 && d.damage <= 0) {
         d.state = "idle";
         d.setVisitedBase(!d.belief.anyFire());
@@ -271,7 +303,7 @@ export class World {
       d.state = "toBase";
     }
     if (d.state === "toBase") {
-      if (d.moveTowards(this.base.x, this.base.y, env, c)) d.state = "charging";
+      if (this.fly(d, this.base.x, this.base.y)) d.state = "charging";
       return;
     }
 
@@ -287,10 +319,10 @@ export class World {
       d.targetTile = wt;
       d.targetX = wt % env.w;
       d.targetY = Math.floor(wt / env.w);
-      if (c.mode === "swarm" || c.mode === "cbba") this.publishClaim(d, d.myClaim(this.tick, d.claims.get(d.id)?.bid ?? 0));
+      if (this.usesClaims) this.publishClaim(d, d.myClaim(this.tick, d.claims.get(d.id)?.bid ?? 0));
     }
     if (d.state === "toWater") {
-      if (d.moveTowards(d.targetX, d.targetY, env, c)) d.state = "refilling";
+      if (this.fly(d, d.targetX, d.targetY)) d.state = "refilling";
       return;
     }
 
@@ -301,15 +333,16 @@ export class World {
     }
 
     if (d.state === "toFire") {
-      if (d.moveTowards(d.targetX, d.targetY, env, c)) {
+      if (this.fly(d, d.targetX, d.targetY)) {
         env.dropWater(d.targetTile, 1);
         d.water -= 1;
         d.waterDropped++;
-        d.sense(env, c, this.tick);
+        this.senseDrone(d);
+        if (this.unified) this.unified.learn(d, env);
         d.state = "idle";
       }
     } else if (d.state === "scouting") {
-      if (d.moveTowards(d.targetX, d.targetY, env, c)) d.state = "idle";
+      if (this.fly(d, d.targetX, d.targetY)) d.state = "idle";
     } else {
       d.hover(env, c);
     }
@@ -318,7 +351,7 @@ export class World {
   private decide(d: Drone) {
     const mode = this.cfg.mode;
     if (mode === "central") return this.decideCentral(d);
-    if (mode === "cbba") return this.decideCbba(d);
+    if (mode === "cbba" || mode === "unified") return this.decideCbba(d);
     const zones = this.zonesFor(d);
     d.lastZones = zones;
     if (zones.length === 0) return this.noKnownFire(d);
@@ -406,7 +439,7 @@ export class World {
     d.targetX = best % this.env.w;
     d.targetY = Math.floor(best / this.env.w);
     d.state = "scouting";
-    if (this.cfg.mode === "swarm" || this.cfg.mode === "cbba") this.publishClaim(d, d.myClaim(this.tick, 0));
+    if (this.usesClaims) this.publishClaim(d, d.myClaim(this.tick, 0));
   }
 
   // ---------------------------------------------------------------- central baseline
@@ -540,12 +573,15 @@ export class World {
       }
     }
     if (!chosen) return this.noKnownFire(d);
+    if (this.unified && (d.state !== "toFire" || d.zone !== chosen.id || d.targetTile !== chosen.target)) this.unified.recordChoice(d, zones, chosen);
     this.assign(d, chosen);
     this.publishClaim(d, d.myClaim(this.tick, st.table.get(st.path[0] ?? "")?.bid ?? 0));
   }
 
   // ---------------------------------------------------------------- helpers
   private zonesFor(d: Drone): Zone[] {
+    // Unified mode: the same zones, with each value scaled by the drone's learned policy.
+    if (this.unified) return this.unified.zonesFor(d);
     // Drones that just merged maps share identical beliefs, but we compute per drone
     // anyway: each drone plans from its OWN map.
     return computeZones(d.belief, this.terrain, this.env.wind, this.cfg);
