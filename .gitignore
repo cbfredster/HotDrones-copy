@@ -7,3 +7,4 @@ publish
 results/legacy
 data
 public/audio/.tmp
+.env.example
