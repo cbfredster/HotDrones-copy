@@ -126,7 +126,7 @@ export class Renderer {
         // Darken tiles this drone hasn't seen recently: its map is out of date there.
         const seen = viewer.belief.lastSeen[i];
         const age = seen < 0 ? 1e9 : world.tick - seen;
-        const dark = Math.min(0.75, age / 300);
+        const dark = Math.min(0.92, age / 150);
         if (oimg.data[o + 3] === 0) {
           oimg.data[o + 3] = 255 * dark;
         } else {
