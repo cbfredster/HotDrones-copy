@@ -8,6 +8,8 @@
 // With TEST_DATABASE_URL it also checks the SQL (schema, bulk inserts, aggregate queries)
 // against a real Postgres. Without TimescaleDB the aggregates are plain views of the same shape.
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { BaseKnowledge, localSitrep } from "../src/integrations/baseKnowledge";
 import { parseCommandLocally, toolCallToAction } from "../src/integrations/commands";
@@ -27,7 +29,8 @@ const get = async (path: string) => (await fetch(BASE + path)).json() as Promise
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const db = process.env.TEST_DATABASE_URL ?? "";
-const server = spawn("node_modules/.bin/tsx", ["server/index.ts"], {
+const tsxCli = join(dirname(createRequire(import.meta.url).resolve("tsx/package.json")), "dist/cli.mjs"); // no shell: works on Windows too
+const server = spawn(process.execPath, [tsxCli, "server/index.ts"], {
   env: { ...process.env, PORT: String(PORT), TIGER_DATABASE_URL: db, DATABASE_URL: "", GEMINI_API_KEY: "", ELEVENLABS_API_KEY: "", MONGODB_URI: "" },
   stdio: ["ignore", "inherit", "inherit"],
 });
