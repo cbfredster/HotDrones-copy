@@ -142,7 +142,7 @@ export const defaultConfig: Config = {
   towerRange: 20,
   towerHeight: 8,
 
-  regrowth: true,
+  regrowth: false, // burnt ground stays burnt (set true to let it grow back)
   regrowAfter: 400,
   regrowChance: 0.004,
 
