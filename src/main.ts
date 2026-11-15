@@ -26,7 +26,11 @@ type Tool = "select" | "ignite" | "blackout" | "crash";
 let world: World;
 let iso: IsoRenderer;
 let replay: ReplayCursor | null = null;
-let playing = true;
+let playing = false;
+// Opening screen: the map starts under cloud and the run starts when the clouds part.
+// `?intro=0` skips it (handy for development and the headless checks).
+let introPending = new URLSearchParams(location.search).get("intro") !== "0";
+const CLOUD_CLEAR_SECONDS = 2.6;
 let tool: Tool = "select";
 let inspected: number | null = null; // tile shown in the inspector
 let acc = 0; // fraction of the next tick already "owed"
@@ -71,6 +75,7 @@ function startRun(cfg: Partial<Config>, actions?: RecordedAction[]) {
   } else {
     iso.setWorld(world);
   }
+  if (introPending) iso.coverWithClouds();
   minimap.setWorld(world);
   overlays.reset();
   view.selected = null;
@@ -145,10 +150,24 @@ function syncControls(force = false) {
 }
 
 function setPlaying(p: boolean) {
+  if (p && introPending) return startIntro();
   playing = p;
   $("play").textContent = playing ? "Pause" : "Play";
   $("play").classList.toggle("on", playing);
 }
+
+/** Part the clouds, then start the run. */
+function startIntro() {
+  if (!introPending) return;
+  introPending = false;
+  $("intro").classList.add("leaving");
+  iso.clearClouds(CLOUD_CLEAR_SECONDS, () => {
+    $("intro").hidden = true;
+    stage.classList.remove("clouded"); // labels, minimap and controls fade in once the map is clear
+    if (!playing) setPlaying(true);
+  });
+}
+$("introStart").onclick = () => startIntro();
 
 let tps = 20;
 function setTps(v: number) {
@@ -185,6 +204,7 @@ $("reset").onclick = newRunFromControls;
 $("mode").onchange = newRunFromControls;
 $("play").onclick = () => setPlaying(!playing);
 $("step").onclick = () => {
+  if (introPending) return startIntro();
   setPlaying(false);
   stepOnce();
   shownAlpha = 0; // animate the single tick instead of jumping
@@ -355,6 +375,13 @@ function loop(now: number) {
 
 setTps(20);
 setTool("select");
+if (introPending) {
+  setPlaying(false);
+  $("intro").hidden = false;
+  stage.classList.add("clouded");
+} else {
+  setPlaying(true);
+}
 newRunFromControls();
 integrations.loadScenarioFromUrl(); // ?scenario=<id> replaces the default run once it has loaded
 requestAnimationFrame(loop);

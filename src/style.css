@@ -222,3 +222,22 @@ header button { padding: 3px 9px; font-size: 12px; align-self: center; }
 .share { font-size: 12px; color: var(--dim); margin-top: 6px; overflow-wrap: anywhere; }
 .share a { color: var(--accent); }
 .share button { padding: 1px 7px; font-size: 11px; margin-left: 4px; }
+
+/* Opening screen: the map is under cloud until the run starts. */
+.intro {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  z-index: 6; text-align: center; padding: 26px 34px 20px;
+  background: rgba(20, 26, 36, 0.55); backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+.intro h2 { margin: 0 0 6px; font-size: 40px; letter-spacing: 0; text-transform: none; color: #fff; }
+.intro h2 span { color: var(--accent, #ff9f1c); }
+.intro p { margin: 0 0 18px; color: #e6e9ee; max-width: 340px; }
+.intro button { font-size: 17px; padding: 10px 22px; }
+.intro small { display: block; margin-top: 10px; color: #c3c8d0; }
+.intro.leaving { opacity: 0; transform: translate(-50%, -60%); pointer-events: none; }
+/* While clouded, hide everything that would give the map away. */
+#stage .iso-labels, #stage .minimap, #stage .transport, #stage #viewBadge { transition: opacity 0.8s ease; }
+#stage.clouded .iso-labels, #stage.clouded .minimap, #stage.clouded .transport, #stage.clouded #viewBadge { opacity: 0; pointer-events: none; }

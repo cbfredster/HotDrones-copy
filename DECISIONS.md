@@ -186,3 +186,16 @@ recorded action log), which is the single write path the ground rules ask for.
 - **Not done in step 4:** Solana (step 4 has no Solana item; step 6 lists it as a prize) and Entire checkpoints
   for this part of the work (the `entire` CLI was not present in this session, and the agent guide says not to
   install tools automatically).
+
+## Opening cloud cover
+
+- The app opens with the map hidden under a layer of chunky low-poly clouds (`src/render/iso/clouds.ts`) and a
+  "Start simulation" card. The sim is paused until the user starts it; the clouds then part from the middle
+  outwards over 2.6 s and the run starts when they have gone. Play, Step and Space all start it too.
+- Only on page load. **New run** after that does not bring the clouds back, so judges can restart quickly.
+  A `?scenario=<id>` link that loads while the clouds are up stays covered until Start.
+- The reveal is timed by the wall clock, not frame time, so a slow laptop does not drag it out.
+- Drone labels, the minimap and the transport bar are hidden while covered, because they are HTML on top of
+  the canvas and would show through the clouds.
+- `?intro=0` skips it and auto-plays as before (for development and headless checks).
+- Purely cosmetic: positions come from `hash01`, nothing reads or writes the sim, and the experiments are untouched.

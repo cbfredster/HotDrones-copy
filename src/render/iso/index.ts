@@ -7,7 +7,7 @@
 //   structures.ts  village, helipad, mast          fire.ts     flames + embers
 //   smoke.ts       smoke puffs                     drones.ts   quadcopters + labels
 //   particles.ts   water, steam, sparks            overlays.ts links, domes, selection
-//   picking.ts     pointer -> tile / drone
+//   picking.ts     pointer -> tile / drone      clouds.ts   opening cloud cover
 import { Group, Vector3 } from "three";
 import { BeliefMap } from "../../sim/belief";
 import { BASE_ID } from "../../sim/comms";
@@ -16,6 +16,7 @@ import { FUEL, Tile } from "../../sim/terrain";
 import { World } from "../../sim/world";
 import { ViewOptions } from "../renderer";
 import { IsoCamera } from "./camera";
+import { CloudLayer, CloudState } from "./clouds";
 import { DroneLayer } from "./drones";
 import { FireLayer } from "./fire";
 import { HoverState, OverlayLayer } from "./overlays";
@@ -68,6 +69,7 @@ export class IsoRenderer {
   private particles!: ParticleLayer;
   private drones!: DroneLayer;
   private overlays!: OverlayLayer;
+  private clouds!: CloudLayer;
 
   private keys = new Uint16Array(0); // last visual key applied per tile
   private truthFire = new Uint8Array(0); // true fire state before the most recent tick
@@ -77,6 +79,7 @@ export class IsoRenderer {
   private readonly pointer = { x: 0, y: 0, inside: false, dirty: false };
   private readonly hover: HoverState = { tile: null, radius: 0 };
   private frameMs = 0;
+  private cloudsWanted = false;
 
   constructor(container: HTMLElement, world: World) {
     this.stage = new IsoScene(container);
@@ -122,6 +125,8 @@ export class IsoRenderer {
     this.particles = new ParticleLayer();
     this.drones = new DroneLayer(world, this.terrain, this.particles, this.labelLayer, this.structures.padTopY);
     this.overlays = new OverlayLayer(world, this.terrain);
+    this.clouds = new CloudLayer(this.terrain);
+    if (this.cloudsWanted) this.clouds.cover(); // a new run before the intro was started stays covered
 
     this.root = new Group();
     this.root.add(
@@ -133,6 +138,7 @@ export class IsoRenderer {
       this.smoke.group,
       this.particles.group,
       this.overlays.group,
+      this.clouds.group,
     );
     this.stage.scene.add(this.root);
 
@@ -198,6 +204,7 @@ export class IsoRenderer {
     this.drones.update(alpha, now, dt, this.cam, width, height, view.selected);
     this.particles.update(dt);
     this.overlays.update(view, this.hover, now, this.cam.unitsPerPixel(height), this.nodePos);
+    this.clouds.update(dt, now);
 
     this.stage.gl.render(this.stage.scene, this.cam.camera);
     this.frameMs += (performance.now() - t0 - this.frameMs) * 0.1;
@@ -285,6 +292,22 @@ export class IsoRenderer {
   /** Where a drone is drawn on screen (CSS px inside the stage), as of the last frame. */
   droneToScreen(id: number): { x: number; y: number } {
     return { x: this.drones.screenX[id], y: this.drones.screenY[id] };
+  }
+
+  /** Hide the whole map under clouds (the opening screen). */
+  coverWithClouds() {
+    this.cloudsWanted = true;
+    this.clouds.cover();
+  }
+
+  /** Part the clouds over `seconds`, then call `done`. */
+  clearClouds(seconds: number, done?: () => void) {
+    this.cloudsWanted = false;
+    this.clouds.clear(seconds, done);
+  }
+
+  get cloudState(): CloudState {
+    return this.clouds.state;
   }
 
   rotate(dir: 1 | -1) {
