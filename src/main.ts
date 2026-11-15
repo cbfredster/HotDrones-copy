@@ -31,6 +31,7 @@ let playing = false;
 // `?intro=0` skips it (handy for development and the headless checks).
 let introPending = new URLSearchParams(location.search).get("intro") !== "0";
 const CLOUD_CLEAR_SECONDS = 2.6;
+const LOGO_LEAD_MS = 450; // the title starts flying out this long before the clouds start to part
 let tool: Tool = "select";
 let inspected: number | null = null; // tile shown in the inspector
 let acc = 0; // fraction of the next tick already "owed"
@@ -160,12 +161,15 @@ function setPlaying(p: boolean) {
 function startIntro() {
   if (!introPending) return;
   introPending = false;
-  $("intro").classList.add("leaving");
-  iso.clearClouds(CLOUD_CLEAR_SECONDS, () => {
-    $("intro").hidden = true;
-    stage.classList.remove("clouded"); // labels, minimap and controls fade in once the map is clear
-    if (!playing) setPlaying(true);
-  });
+  // The title rushes past the camera, then the clouds part, then the run starts.
+  $("intro").classList.add("launch");
+  setTimeout(() => {
+    iso.clearClouds(CLOUD_CLEAR_SECONDS, () => {
+      $("intro").hidden = true;
+      stage.classList.remove("clouded"); // labels, minimap and controls fade in once the map is clear
+      if (!playing) setPlaying(true);
+    });
+  }, LOGO_LEAD_MS);
 }
 $("introStart").onclick = () => startIntro();
 

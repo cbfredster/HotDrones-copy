@@ -202,3 +202,15 @@ recorded action log), which is the single write path the ground rules ask for.
 - Shapes are deliberately irregular: two lumpy puff shapes (icosahedra with jittered vertices), each puff stretched
   and tilted differently, and three kinds of cloud (flat banks, heaps, tall towers) with uneven gaps, over a low
   flat deck that guarantees the map stays hidden. Kept at icosahedron detail 1 to hold the triangle count down.
+
+### Cartoon sky, logo and DurHack easter egg
+
+- The opening is now a blue sky with soft cartoon cumulus (cel-shaded with `MeshToonMaterial`: flat undersides,
+  round billows, two-tone white and blue). While covered, the map layers are hidden, so gaps between clouds show
+  open sky; the sky fades back to the normal dark backdrop as the clouds part.
+- The logo (HTML/SVG over the canvas): the HotDrones wordmark in the app's own colours with six drones on a
+  hexagon around it, joined by flowing dashed "comms links". On Start it rushes past the camera while the drones
+  peel away outwards, then the clouds part (0.45 s later) and the run starts.
+- Easter egg: a drone towing a "DURHACK 2026" banner flies across the sky every 16 s while the intro is up.
+- Inspired by the feel of a classic cartoon title sequence, but deliberately not a copy of any show's logo,
+  lettering or characters: own colours and type, and our own drone instead of a bird.

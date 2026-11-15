@@ -27,10 +27,46 @@
       <div id="banner" class="banner" hidden></div>
 
       <div id="intro" class="intro" hidden>
-        <h2>Hot<span>Drones</span></h2>
-        <p>A wildfire has broken out under the cloud. Ten drones are ready on the pad.</p>
-        <button id="introStart" class="on">Start simulation</button>
-        <small>or press Space</small>
+        <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+          <defs>
+            <!-- One little quadcopter, seen from the front: body, arms, two spinning rotors, a status light. -->
+            <symbol id="introDroneShape" viewBox="-40 -24 80 48">
+              <rect x="-30" y="-6" width="60" height="5" rx="2.5" fill="#2b3442" />
+              <rect x="-33" y="-12" width="5" height="8" rx="2" fill="#2b3442" />
+              <rect x="28" y="-12" width="5" height="8" rx="2" fill="#2b3442" />
+              <ellipse class="rotor" cx="-30.5" cy="-13" rx="13" ry="2.6" fill="#dfe8f2" />
+              <ellipse class="rotor" cx="30.5" cy="-13" rx="13" ry="2.6" fill="#dfe8f2" />
+              <rect x="-15" y="-6" width="30" height="16" rx="7" fill="var(--c, #ff9f1c)" stroke="#1b2a3a" stroke-width="2.5" />
+              <circle cx="0" cy="2" r="3.2" fill="#fff" />
+              <path d="M -10 10 L -14 18 M 10 10 L 14 18" stroke="#2b3442" stroke-width="3" stroke-linecap="round" />
+            </symbol>
+          </defs>
+        </svg>
+
+        <div class="logo">
+          <svg class="hex-links" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            <polygon points="94.00,50.00 72.00,84.64 28.00,84.64 6.00,50.00 28.00,15.36 72.00,15.36" />
+          </svg>
+          <svg class="hex-drone" viewBox="-40 -24 80 48" style="left:94.00%;top:50.00%;--c:#ff9f1c;--d:0.00s;--dx:1.000;--dy:0.000"><use href="#introDroneShape" /></svg>
+          <svg class="hex-drone" viewBox="-40 -24 80 48" style="left:72.00%;top:84.64%;--c:#4cc9f0;--d:0.18s;--dx:0.500;--dy:0.866"><use href="#introDroneShape" /></svg>
+          <svg class="hex-drone" viewBox="-40 -24 80 48" style="left:28.00%;top:84.64%;--c:#b388ff;--d:0.36s;--dx:-0.500;--dy:0.866"><use href="#introDroneShape" /></svg>
+          <svg class="hex-drone" viewBox="-40 -24 80 48" style="left:6.00%;top:50.00%;--c:#80ed99;--d:0.54s;--dx:-1.000;--dy:0.000"><use href="#introDroneShape" /></svg>
+          <svg class="hex-drone" viewBox="-40 -24 80 48" style="left:28.00%;top:15.36%;--c:#ff9f1c;--d:0.72s;--dx:-0.500;--dy:-0.866"><use href="#introDroneShape" /></svg>
+          <svg class="hex-drone" viewBox="-40 -24 80 48" style="left:72.00%;top:15.36%;--c:#4cc9f0;--d:0.90s;--dx:0.500;--dy:-0.866"><use href="#introDroneShape" /></svg>
+          <h2 class="logo-text">Hot<span>Drones</span></h2>
+        </div>
+
+        <div class="intro-start">
+          <button id="introStart" class="on">Start simulation</button>
+          <small>or press Space</small>
+        </div>
+
+        <!-- Easter egg: a drone towing a DurHack banner flies past while you wait. -->
+        <div class="egg" title="Made at DurHack 2026" aria-hidden="true">
+          <svg class="egg-drone" viewBox="-40 -24 80 48" style="--c:#ff9f1c"><use href="#introDroneShape" /></svg>
+          <svg class="egg-rope" viewBox="0 0 60 30"><path d="M 0 4 Q 30 26 60 14" /></svg>
+          <div class="egg-banner">DURHACK 2026 ✦</div>
+        </div>
       </div>
 
       <div class="hud top-right">

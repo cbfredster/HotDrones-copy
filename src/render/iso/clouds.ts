@@ -1,25 +1,38 @@
-// The opening cloud cover: a thick, lumpy layer of low-poly clouds hiding the whole map
-// until the run starts, then parting from the middle outwards to reveal it.
+// The opening sky: big, soft cartoon clouds in a blue sky, hiding the map until the run
+// starts, then parting from the middle outwards to reveal it.
 // Purely cosmetic: it never reads or writes the sim (all shapes come from hash01).
 //
-// Irregularity comes from four places:
-//   - two lumpy puff shapes (icosahedra with their vertices pushed in and out);
-//   - every puff stretched differently on each axis and tumbled to its own angle;
-//   - clumps of different kinds: low flat banks, rounded heaps, and tall towers;
-//   - clumps scattered with uneven gaps, over a low base deck that keeps the map hidden.
-import { BufferGeometry, Color, Euler, Group, IcosahedronGeometry, InstancedBufferAttribute, InstancedMesh, Matrix4, MeshLambertMaterial, Quaternion, Vector3 } from "three";
+// Each cloud is a classic cartoon cumulus: a flat underside with round billows heaped on
+// top, the biggest in the middle. Cel shading (MeshToonMaterial) gives the clean two-tone
+// white and soft-blue look. The map itself is hidden while covered (see IsoRenderer), so
+// the gaps between clouds show open sky.
+import {
+  Color,
+  DataTexture,
+  Euler,
+  Group,
+  InstancedBufferAttribute,
+  InstancedMesh,
+  Matrix4,
+  MeshToonMaterial,
+  NearestFilter,
+  Quaternion,
+  RedFormat,
+  SphereGeometry,
+  Vector3,
+} from "three";
 import { TerrainLayer } from "./terrain";
 import { addInstanceAlpha, clamp01, hash01, withInstanceAlpha } from "./util";
 
-const MARGIN = 20; // clouds extend this far beyond the map, so the slab's sides and the corners are hidden too
-const DECK_SPACING = 4.2; // the low base deck
-const CLUMP_SPACING = 7.5; // the lumpy clouds on top of it
-const DRIFT = 46; // how far a puff travels while clearing
-const SPREAD = 0.75; // seconds between the centre clearing and the edges starting to
+const MARGIN = 22; // clouds reach this far beyond the map
+const SPACING = 11; // between cloud centres (jittered)
+const DRIFT = 50; // how far a billow travels while clearing
+const SPREAD = 0.8; // seconds between the centre clearing and the edges starting to
+const SKY_DRIFT = 0.35; // units per second the clouds idle sideways while waiting
 
 export type CloudState = "covered" | "clearing" | "clear";
 
-interface Puff {
+interface Billow {
   x: number;
   y: number;
   z: number;
@@ -29,162 +42,133 @@ interface Puff {
   rot: Quaternion;
   dx: number; // outward direction
   dz: number;
-  rise: number; // how far it lifts while clearing
-  delay: number; // 0..1: share of SPREAD before this puff starts to move
-  phase: number; // for the idle bob
-  shade: number;
-  mesh: number; // which lumpy shape
-  slot: number; // instance index within that mesh
+  rise: number;
+  delay: number; // 0..1: share of SPREAD before this billow starts to move
+  phase: number;
 }
 
-/** An icosahedron with every vertex pushed in or out a little: one lumpy cloud puff. */
-function lumpyPuff(seed: number): BufferGeometry {
-  const geo = new IcosahedronGeometry(1, 1);
-  const pos = geo.getAttribute("position");
-  const v = new Vector3();
-  // The geometry is non-indexed, so a corner shared by several faces appears several times:
-  // key each corner by its rounded position so all copies move together and the shape stays closed.
-  const bump = new Map<string, number>();
-  for (let i = 0; i < pos.count; i++) {
-    v.fromBufferAttribute(pos, i);
-    const key = `${v.x.toFixed(3)},${v.y.toFixed(3)},${v.z.toFixed(3)}`;
-    let k = bump.get(key);
-    if (k === undefined) {
-      k = 0.86 + hash01(seed, bump.size) * 0.26;
-      if (v.y < -0.35) k *= 0.85; // flatter underside, like a real cumulus
-      bump.set(key, k);
-    }
-    v.multiplyScalar(k);
-    pos.setXYZ(i, v.x, v.y, v.z);
-  }
-  geo.computeVertexNormals();
-  return geo;
+/** Three hard steps of light: lit white, a soft blue mid-tone, and a slightly deeper shade. */
+function toonRamp(): DataTexture {
+  const tex = new DataTexture(new Uint8Array([95, 175, 255]), 3, 1, RedFormat);
+  tex.minFilter = tex.magFilter = NearestFilter;
+  tex.needsUpdate = true;
+  return tex;
 }
 
 export class CloudLayer {
   readonly group = new Group();
-  private readonly meshes: InstancedMesh[] = [];
-  private readonly alphas: InstancedBufferAttribute[] = [];
-  private readonly puffs: Puff[] = [];
+  private readonly mesh: InstancedMesh;
+  private readonly alpha: InstancedBufferAttribute;
+  private readonly billows: Billow[] = [];
   private stateNow: CloudState = "clear";
-  private t = 0; // seconds since clearing began
+  private t = 0;
   private startedAt = -1; // wall-clock start of clearing: slow frames must not slow the reveal down
   private duration = 2.6;
   private onDone: (() => void) | null = null;
   private readonly m = new Matrix4();
   private readonly p = new Vector3();
   private readonly s = new Vector3();
+  private readonly span: number;
 
   constructor(terrain: TerrainLayer) {
     const { w, h, maxY } = terrain;
     const cx = (w - 1) / 2;
     const cz = (h - 1) / 2;
     const maxD = Math.hypot(w / 2 + MARGIN, h / 2 + MARGIN);
-    const deckY = maxY + 3.0; // above the tallest hill, mast and drone
+    this.span = w + 2 * MARGIN;
     const euler = new Euler();
-    let seed = 0;
+    let c = 0;
 
-    const add = (x: number, y: number, z: number, sx: number, sy: number, sz: number, key: number) => {
-      let dx = x - cx;
-      let dz = z - cz;
-      const d = Math.hypot(dx, dz) || 1;
-      const swirl = (hash01(key, 1) - 0.5) * 0.7; // so the parting doesn't look mechanical
-      const ux = dx / d;
-      const uz = dz / d;
-      dx = ux * Math.cos(swirl) - uz * Math.sin(swirl);
-      dz = ux * Math.sin(swirl) + uz * Math.cos(swirl);
-      euler.set((hash01(key, 2) - 0.5) * 0.3, hash01(key, 3) * Math.PI * 2, (hash01(key, 4) - 0.5) * 0.3);
-      this.puffs.push({
-        x,
-        y,
-        z,
-        sx,
-        sy,
-        sz,
-        rot: new Quaternion().setFromEuler(euler),
-        dx,
-        dz,
-        rise: 3 + hash01(key, 5) * 5,
-        delay: clamp01(d / maxD + (hash01(key, 6) - 0.5) * 0.18),
-        phase: hash01(key, 7) * Math.PI * 2,
-        shade: 0.86 + hash01(key, 8) * 0.14,
-        mesh: hash01(key, 9) < 0.5 ? 0 : 1,
-        slot: 0,
-      });
-    };
-
-    // 1. A low, flat, overlapping deck: nothing below it can be seen.
-    for (let gz = -MARGIN; gz <= h + MARGIN; gz += DECK_SPACING) {
-      for (let gx = -MARGIN; gx <= w + MARGIN; gx += DECK_SPACING) {
-        const k = 1000 + seed++;
-        const x = gx + (hash01(k, 11) - 0.5) * DECK_SPACING * 0.9;
-        const z = gz + (hash01(k, 12) - 0.5) * DECK_SPACING * 0.9;
-        const r = 2.6 + hash01(k, 13) * 1.4;
-        add(x, deckY - 0.6 + hash01(k, 14) * 0.4, z, r * (0.9 + hash01(k, 15) * 0.6), r * (0.24 + hash01(k, 16) * 0.12), r * (0.9 + hash01(k, 17) * 0.6), k);
-      }
-    }
-
-    // 2. Lumpy clouds scattered over the deck, of three kinds, with uneven gaps between them.
-    for (let gz = -MARGIN; gz <= h + MARGIN; gz += CLUMP_SPACING) {
-      for (let gx = -MARGIN; gx <= w + MARGIN; gx += CLUMP_SPACING) {
-        const c = 5000 + seed++;
-        if (hash01(c, 20) < 0.18) continue; // a gap: just the flat deck here
-        const ox = gx + (hash01(c, 21) - 0.5) * CLUMP_SPACING;
-        const oz = gz + (hash01(c, 22) - 0.5) * CLUMP_SPACING;
-        const kind = hash01(c, 23);
-        const tower = kind > 0.82; // tall cumulus
-        const bank = kind < 0.35; // long, low and flat
-        const n = tower ? 9 + Math.floor(hash01(c, 24) * 5) : bank ? 5 + Math.floor(hash01(c, 24) * 3) : 6 + Math.floor(hash01(c, 24) * 5);
-        const size = (tower ? 2.5 : bank ? 2.0 : 2.0) + hash01(c, 25) * 1.6;
-        const stretch = hash01(c, 26) * Math.PI * 2; // banks run along this direction
-        for (let p = 0; p < n; p++) {
-          const k = c * 16 + p;
-          let x: number;
-          let z: number;
-          let y: number;
-          let r = size * (0.6 + hash01(k, 30) * 0.6);
-          if (bank) {
-            const along = (p / Math.max(1, n - 1) - 0.5) * size * 4.2 + (hash01(k, 31) - 0.5);
-            const across = (hash01(k, 32) - 0.5) * size * 1.2;
-            x = ox + Math.cos(stretch) * along - Math.sin(stretch) * across;
-            z = oz + Math.sin(stretch) * along + Math.cos(stretch) * across;
-            y = deckY + 0.6 + hash01(k, 33) * 0.7;
-          } else {
-            // Heaped: the first puffs form a base, later ones pile up on it (much higher in towers).
-            const level = p / n;
-            const spread = size * (1.6 - level) * (0.5 + hash01(k, 34) * 0.7);
-            const a = hash01(k, 35) * Math.PI * 2;
-            x = ox + Math.cos(a) * spread;
-            z = oz + Math.sin(a) * spread;
-            y = deckY + 0.8 + level * (tower ? size * 3.2 : size * 1.3) + hash01(k, 36) * 0.5;
-            if (tower) r *= 1.15 - level * 0.35; // narrower towards the top
-          }
-          const flat = bank ? 0.42 + hash01(k, 37) * 0.2 : 0.62 + hash01(k, 37) * 0.35;
-          add(x, y, z, r * (0.8 + hash01(k, 38) * 0.6), r * flat, r * (0.8 + hash01(k, 39) * 0.6), k);
+    for (let gz = -MARGIN; gz <= h + MARGIN; gz += SPACING) {
+      for (let gx = -MARGIN; gx <= w + MARGIN; gx += SPACING) {
+        c++;
+        if (hash01(c, 1) < 0.12) continue; // a patch of open sky
+        const ox = gx + (hash01(c, 2) - 0.5) * SPACING * 0.9;
+        const oz = gz + (hash01(c, 3) - 0.5) * SPACING * 0.9;
+        const size = 2.6 + hash01(c, 4) * 2.4; // radius of the biggest billow
+        const baseY = maxY + 4 + hash01(c, 5) * 6; // clouds float at different heights
+        const heading = hash01(c, 6) * Math.PI; // clouds are longer one way than the other
+        const long = 1.6 + hash01(c, 7) * 0.9;
+        const n = 5 + Math.floor(hash01(c, 8) * 5);
+        for (let b = 0; b < n; b++) {
+          const k = c * 32 + b;
+          // Billows along the cloud's long axis: big in the middle, smaller at the ends.
+          const along = b === 0 ? 0 : (hash01(k, 10) - 0.5) * 2 * size * long;
+          const across = (hash01(k, 11) - 0.5) * size * 0.9;
+          const fromMid = Math.abs(along) / (size * long);
+          const r = size * (b === 0 ? 1 : 0.55 + (1 - fromMid) * 0.4 + hash01(k, 12) * 0.15);
+          const x = ox + Math.cos(heading) * along - Math.sin(heading) * across;
+          const z = oz + Math.sin(heading) * along + Math.cos(heading) * across;
+          // Sit each billow on the shared flat base, so the cloud has a flat underside.
+          const y = baseY + r * 0.35;
+          this.addBillow(x, y, z, r * (1 + hash01(k, 13) * 0.25), r * 0.8, r, k, cx, cz, maxD, euler);
         }
+        // The flat base that ties the billows together.
+        const k = c * 32 + 31;
+        this.addBillow(ox, baseY + size * 0.15, oz, size * long * 1.25, size * 0.32, size * 1.05, k, cx, cz, maxD, euler, heading);
       }
     }
 
-    // Two lumpy shapes, so neighbouring puffs never look alike.
-    const counts = [0, 0];
-    for (const p of this.puffs) p.slot = counts[p.mesh]++;
-    const col = new Color();
-    for (let k = 0; k < 2; k++) {
-      const mat = withInstanceAlpha(new MeshLambertMaterial({ flatShading: true, emissive: new Color(0x9aa6b8), emissiveIntensity: 0.3 }));
-      const mesh = new InstancedMesh(lumpyPuff(17 + k * 31), mat, Math.max(1, counts[k]));
-      mesh.frustumCulled = false;
-      mesh.renderOrder = 20; // after the smoke
-      mesh.castShadow = true; // their shadows sweep off the map as they part
-      this.alphas.push(addInstanceAlpha(mesh, Math.max(1, counts[k])));
-      this.meshes.push(mesh);
-      this.group.add(mesh);
-    }
-    for (const p of this.puffs) this.meshes[p.mesh].setColorAt(p.slot, col.setRGB(p.shade, p.shade, Math.min(1, p.shade + 0.04)));
+    const mat = withInstanceAlpha(
+      new MeshToonMaterial({ color: new Color(0xffffff), gradientMap: toonRamp(), emissive: new Color(0x7fb0e6), emissiveIntensity: 0.2 }),
+    );
+    this.mesh = new InstancedMesh(new SphereGeometry(1, 18, 12), mat, this.billows.length);
+    this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = 20;
+    this.mesh.castShadow = true;
+    this.alpha = addInstanceAlpha(this.mesh, this.billows.length);
+    this.group.add(this.mesh);
     this.group.visible = false;
+  }
+
+  private addBillow(
+    x: number,
+    y: number,
+    z: number,
+    sx: number,
+    sy: number,
+    sz: number,
+    key: number,
+    cx: number,
+    cz: number,
+    maxD: number,
+    euler: Euler,
+    heading?: number,
+  ) {
+    let dx = x - cx;
+    let dz = z - cz;
+    const d = Math.hypot(dx, dz) || 1;
+    const swirl = (hash01(key, 20) - 0.5) * 0.5;
+    const ux = dx / d;
+    const uz = dz / d;
+    dx = ux * Math.cos(swirl) - uz * Math.sin(swirl);
+    dz = ux * Math.sin(swirl) + uz * Math.cos(swirl);
+    euler.set(0, heading !== undefined ? -heading : hash01(key, 21) * Math.PI * 2, 0);
+    this.billows.push({
+      x,
+      y,
+      z,
+      sx,
+      sy,
+      sz,
+      rot: new Quaternion().setFromEuler(euler),
+      dx,
+      dz,
+      rise: 2 + hash01(key, 22) * 4,
+      delay: clamp01(d / maxD + (hash01(key, 23) - 0.5) * 0.12),
+      phase: hash01(key, 24) * Math.PI * 2,
+    });
   }
 
   get state() {
     return this.stateNow;
+  }
+
+  /** 0 while covered, rising to 1 as the clouds finish clearing. */
+  get progress() {
+    if (this.stateNow === "covered") return 0;
+    if (this.stateNow === "clear") return 1;
+    return clamp01(this.t / this.duration);
   }
 
   /** Cover the map at once. */
@@ -231,20 +215,23 @@ export class CloudLayer {
   private place(now: number) {
     const moveTime = Math.max(0.1, this.duration - SPREAD);
     const clearing = this.stateNow === "clearing";
-    for (const p of this.puffs) {
-      const bob = Math.sin(now * 0.6 + p.phase) * 0.12;
-      const k = clearing ? clamp01((this.t - p.delay * SPREAD) / moveTime) : 0;
-      const ease = k * k * (3 - 2 * k); // smoothstep: eases in and out
-      const grow = 1 + 0.35 * ease;
-      this.p.set(p.x + p.dx * DRIFT * ease, p.y + bob + p.rise * ease, p.z + p.dz * DRIFT * ease);
-      this.s.set(p.sx * grow, p.sy * grow, p.sz * grow);
-      this.m.compose(this.p, p.rot, this.s);
-      this.meshes[p.mesh].setMatrixAt(p.slot, this.m);
-      (this.alphas[p.mesh].array as Float32Array)[p.slot] = 1 - clamp01((k - 0.35) / 0.55);
+    // A slow sideways drift while waiting, wrapped so the sky never empties.
+    const drift = (now * SKY_DRIFT) % this.span;
+    for (let i = 0; i < this.billows.length; i++) {
+      const b = this.billows[i];
+      const bob = Math.sin(now * 0.5 + b.phase) * 0.1;
+      const k = clearing ? clamp01((this.t - b.delay * SPREAD) / moveTime) : 0;
+      const ease = k * k * (3 - 2 * k);
+      const grow = 1 + 0.3 * ease;
+      let x = b.x + drift * 0.4;
+      if (x > this.span - MARGIN) x -= this.span;
+      this.p.set(x + b.dx * DRIFT * ease, b.y + bob + b.rise * ease, b.z + b.dz * DRIFT * ease);
+      this.s.set(b.sx * grow, b.sy * grow, b.sz * grow);
+      this.m.compose(this.p, b.rot, this.s);
+      this.mesh.setMatrixAt(i, this.m);
+      (this.alpha.array as Float32Array)[i] = 1 - clamp01((k - 0.35) / 0.55);
     }
-    for (let k = 0; k < this.meshes.length; k++) {
-      this.meshes[k].instanceMatrix.needsUpdate = true;
-      this.alphas[k].needsUpdate = true;
-    }
+    this.mesh.instanceMatrix.needsUpdate = true;
+    this.alpha.needsUpdate = true;
   }
 }
