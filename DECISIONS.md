@@ -199,3 +199,6 @@ recorded action log), which is the single write path the ground rules ask for.
   the canvas and would show through the clouds.
 - `?intro=0` skips it and auto-plays as before (for development and headless checks).
 - Purely cosmetic: positions come from `hash01`, nothing reads or writes the sim, and the experiments are untouched.
+- Shapes are deliberately irregular: two lumpy puff shapes (icosahedra with jittered vertices), each puff stretched
+  and tilted differently, and three kinds of cloud (flat banks, heaps, tall towers) with uneven gaps, over a low
+  flat deck that guarantees the map stays hidden. Kept at icosahedron detail 1 to hold the triangle count down.
