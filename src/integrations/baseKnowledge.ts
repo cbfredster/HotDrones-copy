@@ -7,6 +7,7 @@
 import { BASE_ID } from "../sim/comms";
 import { Fire } from "../sim/environment";
 import { computeZones } from "../sim/planner";
+import { terrainTarget } from "../sim/terrain";
 import type { World } from "../sim/world";
 import type { SimEvent } from "./events";
 
@@ -107,7 +108,7 @@ export class BaseKnowledge {
     }
     const w = world.env.w;
     const belief = world.base.belief;
-    const v = world.terrain.village[4];
+    const v = terrainTarget(world.terrain);
     const vx = v % w;
     const vy = Math.floor(v / w);
     let burning = 0;

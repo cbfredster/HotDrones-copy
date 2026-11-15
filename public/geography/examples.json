@@ -1,0 +1,14 @@
+{
+  "examples": [
+    {
+      "id": "loch-lomond",
+      "label": "Loch Lomond, Scotland",
+      "file": "/geography/loch-lomond.json"
+    },
+    {
+      "id": "sierra-nevada",
+      "label": "Sierra Nevada, Spain",
+      "file": "/geography/sierra-nevada.json"
+    }
+  ]
+}

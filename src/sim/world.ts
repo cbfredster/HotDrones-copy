@@ -4,6 +4,7 @@ import { BASE_ID, BASE_MAST_HEIGHT, Blackout, CommsNode, Network, buildNetwork, 
 import { Config, defaultConfig } from "./config";
 import { Drone } from "./drone";
 import { Environment, Fire } from "./environment";
+import { createTerrainFromGeo, GeoScenario, validateGeoScenario } from "./geography";
 import type { RecordedAction } from "./judge";
 import { Claim, Zone, computeZones } from "./planner";
 import { Rng } from "./rng";
@@ -52,22 +53,39 @@ export class World {
   judgeLog: RecordedAction[] = [];
   /** The config exactly as the run started, before any judge action changed it. */
   readonly initialCfg: Config;
+  /** Exact immutable initial inputs. Each run creates fresh terrain buffers from this snapshot. */
+  readonly initialGeo: GeoScenario | undefined;
+  /** Dry geographic maps use a clearly hypothetical supply station at the base, never a fictional lake. */
+  readonly baseRefillStation: boolean;
   private zoneCache = new Map<number, Zone[]>();
   /** The layered CBBA + DTN + IB + CI + MARL + DMPC stack; only built in "unified" mode. */
   unified: UnifiedStack | null = null;
 
-  constructor(cfg: Partial<Config> = {}) {
+  constructor(cfg: Partial<Config> = {}, geography?: GeoScenario) {
+    this.initialGeo = geography === undefined ? undefined : validateGeoScenario(geography);
     this.cfg = { ...defaultConfig, ...cfg };
+    if (this.initialGeo) {
+      this.cfg.width = this.initialGeo.w;
+      this.cfg.height = this.initialGeo.h;
+      this.cfg.preburnTicks = this.initialGeo.preburnTicks;
+      this.cfg.ignitions = this.initialGeo.ignition.length;
+    }
     this.initialCfg = { ...this.cfg };
     const c = this.cfg;
     this.rng = new Rng(c.seed);
     this.agentRng = new Rng(c.seed * 7919 + 13);
-    this.terrain = generateTerrain(this.rng, c.width, c.height, c.heightScale);
+    this.terrain = this.initialGeo ? createTerrainFromGeo(this.initialGeo) : generateTerrain(this.rng, c.width, c.height, c.heightScale);
     // Regrowth draws from its own stream so that turning it on cannot change the fire's own dice.
     this.env = new Environment(this.terrain, c, this.rng, new Rng(c.seed * 104729 + 71));
-    this.env.seedIgnitions(c.ignitions);
+    if (this.initialGeo) {
+      // Geographic fire RNG owns wind/fire draws only. No network/UI timing or procedural terrain draws.
+      this.env.wind = { ...this.initialGeo.wind };
+      for (const tile of this.initialGeo.ignition) this.env.ignite(tile, 1);
+    } else this.env.seedIgnitions(c.ignitions);
     for (let t = 0; t < c.preburnTicks; t++) this.env.step(0); // fire takes hold before it's reported
     for (let i = 0; i < this.terrain.type.length; i++) if (this.terrain.type[i] === Tile.Water) this.waterTiles.push(i);
+    this.baseRefillStation = !!this.initialGeo && this.waterTiles.length === 0;
+    if (this.baseRefillStation) this.waterTiles.push(this.initialGeo!.base);
 
     const b = this.terrain.base;
     this.base = { x: b.x, y: b.y, belief: new BeliefMap(c.width, c.height), manualOutage: false };

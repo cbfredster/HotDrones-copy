@@ -26,10 +26,10 @@ export class IsoCamera {
   private readonly ndc = new Vector2();
 
   /** Fit a w x h map (tallest point maxY, already vertically scaled) into the view. */
-  frame(w: number, h: number, maxY: number, aspect: number) {
+  frame(w: number, h: number, maxY: number, aspect: number, fullHeight = false) {
     this.map = { w, h };
     this.aspect = aspect;
-    this.home.set((w - 1) / 2, maxY * 0.35, (h - 1) / 2);
+    this.home.set((w - 1) / 2, maxY * (fullHeight ? 0.5 : 0.35), (h - 1) / 2);
     this.plane.constant = -this.home.y;
     this.fitViewHeight(maxY);
     this.reset();

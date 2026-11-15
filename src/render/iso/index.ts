@@ -152,8 +152,8 @@ export class IsoRenderer {
     this.hover.tile = null;
 
     this.stage.resize();
-    this.stage.fitToMap(w, h, this.terrain.maxY);
-    this.cam.frame(w, h, this.terrain.maxY, this.stage.aspect);
+    this.stage.fitToMap(w, h, this.terrain.maxY, !!world.initialGeo);
+    this.cam.frame(w, h, this.terrain.maxY, this.stage.aspect, !!world.initialGeo);
     if (this.cloudsWanted) this.coverWithClouds(); // a new run before the intro was started stays covered
   }
 

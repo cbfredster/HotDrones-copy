@@ -3,6 +3,7 @@
 // which also records the action with the tick it was applied at. Because the sim is
 // deterministic, seed + config + this log reproduces a run exactly.
 import type { Config } from "./config";
+import type { GeoScenario } from "./geography";
 import { World, type Metrics } from "./world";
 
 export type JudgeAction =
@@ -111,8 +112,8 @@ export class ReplayCursor {
 }
 
 /** Run a scenario (config + recorded judge actions) headless to the end. Used for replays and the challenge board. */
-export function runScenario(cfg: Partial<Config>, actions: readonly RecordedAction[] = []): Metrics {
-  const world = new World(cfg);
+export function runScenario(cfg: Partial<Config>, actions: readonly RecordedAction[] = [], geography?: GeoScenario): Metrics {
+  const world = new World(cfg, geography);
   const cursor = new ReplayCursor(actions);
   while (!world.finished) {
     cursor.applyDue(world);

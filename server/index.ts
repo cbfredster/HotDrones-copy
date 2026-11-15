@@ -17,10 +17,12 @@ import { env } from "./env";
 import { Gemini } from "./gemini";
 import { FileStore, MongoStore, newScenarioId, type Outcome, type Scenario, type ScenarioStore } from "./store";
 import { Tiger } from "./tiger";
+import { validateGeoScenario } from "../src/sim/geography";
+import { loadGeography, searchPlaces } from "./geography";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const DIST = join(ROOT, "dist");
-const DATA = join(ROOT, "data");
+const DATA = process.env.HOTDRONES_DATA_DIR ? resolve(process.env.HOTDRONES_DATA_DIR) : join(ROOT, "data");
 
 // ---------------------------------------------------------------- integrations
 const gemini = new Gemini(env.geminiKey, env.geminiModel);
@@ -171,7 +173,7 @@ async function drainChallenges() {
         const outcomes: Record<string, Outcome> = {};
         let swarmEvents: SimEvent[] = [];
         for (const mode of MODES) {
-          const r = await runScenarioAsync({ ...s.cfg, mode }, s.actions);
+          const r = await runScenarioAsync({ ...s.cfg, mode }, s.actions, s.geography);
           outcomes[mode] = r.outcome;
           if (mode === "swarm") swarmEvents = r.events;
         }
@@ -200,11 +202,14 @@ function readBody(req: IncomingMessage, limit: number): Promise<Buffer> {
   return new Promise((res, rej) => {
     const chunks: Buffer[] = [];
     let size = 0;
+    let exceeded = false;
     req.on("data", (c: Buffer) => {
+      if (exceeded) return;
       size += c.length;
       if (size > limit) {
+        exceeded = true;
+        chunks.length = 0;
         rej(httpError(413, "too large"));
-        req.destroy();
       } else chunks.push(c);
     });
     req.on("end", () => res(Buffer.concat(chunks)));
@@ -250,6 +255,23 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL) {
   const m = req.method ?? "GET";
 
   if (p === "/api/status" && m === "GET") return json(res, 200, status());
+
+  // Fixed providers only. Client disconnects cancel work; no provider call occurs in a tick.
+  if ((p === "/api/geography/search" || p === "/api/geography/load") && m === "GET") {
+    const controller = new AbortController();
+    const cancel = () => { if (!res.writableEnded) controller.abort(); };
+    res.on("close", cancel);
+    try {
+      const result = p.endsWith("/search")
+        ? await searchPlaces(url.searchParams.get("q") ?? "", controller.signal)
+        : await loadGeography({ lat: Number(url.searchParams.get("lat") ?? NaN), lon: Number(url.searchParams.get("lon") ?? NaN), sizeM: Number(url.searchParams.get("sizeM") ?? NaN), label: url.searchParams.get("label") ?? "" }, controller.signal);
+      if (!controller.signal.aborted) return json(res, 200, result);
+      return;
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      throw error;
+    } finally { res.off("close", cancel); }
+  }
 
   // ---- telemetry (Tiger Data)
   if (p === "/api/telemetry" && m === "POST") {
@@ -322,6 +344,11 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL) {
     const b = await readJson(req, 400_000);
     const cfg = sanitizeConfig(b.cfg);
     if (!Number.isFinite(cfg.seed)) throw httpError(400, "a scenario needs a seed");
+    let geography;
+    if (b.geography !== undefined) {
+      try { geography = validateGeoScenario(b.geography); }
+      catch (e) { throw httpError(400, (e as Error).message); }
+    }
     const s: Scenario = {
       _id: newScenarioId(),
       name: String(b.name ?? "").trim().slice(0, 60) || `Seed ${cfg.seed}`,
@@ -329,6 +356,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL) {
       createdAt: new Date().toISOString(),
       cfg,
       actions: sanitizeActions(b.actions),
+      ...(geography ? { geography } : {}),
       status: "queued",
     };
     await store.save(s);
@@ -350,7 +378,7 @@ const server = createServer((req, res) => {
   const url = new URL(req.url ?? "/", "http://localhost");
   if (!url.pathname.startsWith("/api/")) return serveStatic(req, res, url.pathname);
   api(req, res, url).catch((e: any) => {
-    const code = typeof e.code === "number" ? e.code : e.message === "rate limited" ? 429 : 500;
+    const code = typeof e.code === "number" ? e.code : typeof e.status === "number" ? e.status : e.message === "rate limited" ? 429 : 500;
     if (code >= 500) console.warn(`[api] ${req.method} ${url.pathname}: ${e.message}`);
     if (!res.headersSent) json(res, code, { error: String(e.message ?? e).slice(0, 200) });
     else res.end();

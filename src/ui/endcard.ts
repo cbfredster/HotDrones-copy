@@ -2,6 +2,7 @@
 // (The sim keeps running after the village is lost; World.finished is unchanged.)
 import { FUEL, Tile } from "../sim/terrain";
 import { World } from "../sim/world";
+import { burntHectares } from "../sim/geography";
 import { $ } from "./dom";
 
 export class RunOverlays {
@@ -29,7 +30,7 @@ export class RunOverlays {
     if (world.env.villageLost && this.bannerFor !== world) {
       this.bannerFor = world;
       const b = $("banner");
-      b.innerHTML = `VILLAGE LOST <small>fire reached it at t=${world.env.villageLostAt} — the swarm fights on</small>`;
+      b.innerHTML = `${world.initialGeo ? "PROTECTED TARGET" : "VILLAGE"} LOST <small>fire reached it at t=${world.env.villageLostAt} — the swarm fights on</small>`;
       b.hidden = false;
     }
     if (world.finished && this.cardFor !== world && this.dismissedFor !== world) {
@@ -47,14 +48,15 @@ export class RunOverlays {
     const card = $("endcard");
     card.classList.toggle("saved", !m.villageLost);
     card.classList.toggle("lost", m.villageLost);
-    $("endTitle").textContent = m.villageLost ? "Village lost" : out ? "Village saved" : "Time limit reached";
+    const targetName = world.initialGeo ? "Protected target" : "Village";
+    $("endTitle").textContent = m.villageLost ? `${targetName} lost` : out ? `${targetName} saved` : "Time limit reached";
     $("endSub").textContent = out
       ? `The last fire went out ${m.extinguishedAt} ticks after the drones were called.`
       : `Still burning after ${m.tick} ticks (${m.burning} tiles alight).`;
     const modeName = ({ swarm: "Swarm", central: "Central control", greedy: "No coordination", cbba: "CBBA", unified: "Unified stack" } as Record<string, string>)[world.cfg.mode] ?? world.cfg.mode;
     $("endStats").innerHTML = `
-      <span>Burnt area</span><b>${m.burnt} tiles (${((100 * m.burnt) / Math.max(1, flammable)).toFixed(0)}% of what could burn)</b>
-      <span>Village</span>${m.villageLost ? `<b class="bad">lost at t=${m.villageLostAt}</b>` : `<b class="good">safe</b>`}
+      <span>Burnt area</span><b>${m.burnt} tiles${world.initialGeo ? ` · ${burntHectares(world.initialGeo, m.burnt).toFixed(2)} ha` : ""} (${((100 * m.burnt) / Math.max(1, flammable)).toFixed(0)}% of what could burn)</b>
+      <span>${targetName}</span>${m.villageLost ? `<b class="bad">lost at t=${m.villageLostAt}</b>` : `<b class="good">safe</b>`}
       <span>Drones lost</span><b class="${m.dronesLost ? "bad" : ""}">${m.dronesLost} of ${world.drones.length}</b>
       <span>Water dropped</span><b>${m.waterDropped} loads</b>
       <span>Time to extinguish</span><b>${out ? m.extinguishedAt + " ticks" : "not extinguished"}</b>

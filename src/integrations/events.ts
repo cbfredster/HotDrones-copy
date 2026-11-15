@@ -7,6 +7,7 @@ import { BASE_ID } from "../sim/comms";
 import type { DroneState } from "../sim/drone";
 import { Fire } from "../sim/environment";
 import type { JudgeAction } from "../sim/judge";
+import { terrainTarget } from "../sim/terrain";
 import type { World } from "../sim/world";
 
 export type SimEvent = { tick: number } & (
@@ -182,7 +183,7 @@ export class EventDeriver {
   /** Distance (tiles) from the village centre to the nearest burning tile; Infinity if nothing burns. */
   villageFireDistance(world: World): number {
     const w = world.env.w;
-    const v = world.terrain.village[4];
+    const v = terrainTarget(world.terrain);
     const vx = v % w;
     const vy = Math.floor(v / w);
     const fire = world.env.fire;

@@ -1,6 +1,6 @@
 import { Config } from "./config";
 import { Rng } from "./rng";
-import { FUEL, Terrain, Tile, clamp, neighbours4 } from "./terrain";
+import { FUEL, Terrain, Tile, clamp, neighbours4, terrainTarget } from "./terrain";
 
 export enum Fire {
   Unburnt = 0,
@@ -79,7 +79,7 @@ export class Environment {
 
   // Start fires upwind of the village so there is a real threat to fight.
   seedIgnitions(count: number) {
-    const v = this.terrain.village[4];
+    const v = terrainTarget(this.terrain);
     const vx = v % this.w;
     const vy = Math.floor(v / this.w);
     let placed = 0;
@@ -214,7 +214,7 @@ export class Environment {
           if (fuel === 0) continue;
           const len = Math.hypot(dx, dy);
           const windF = Math.exp(cfg.windStrength * this.wind.speed * ((dx * wx + dy * wy) / len));
-          const slopeF = Math.exp(clamp(cfg.slopeStrength * (height[j] - height[i]), -1.5, 1.5));
+          const slopeF = Math.exp(clamp(cfg.slopeStrength * (height[j] - height[i]) / (this.terrain.metresPerCell ? len : 1), -1.5, 1.5));
           const sevF = 0.5 + sev / cfg.maxSeverity;
           const p = cfg.spreadBase * fuel * windF * slopeF * sevF * dw * (1 - this.wetness[j]);
           if (this.rng.next() < p) newFires.push([j, Math.max(1, sev * 0.6)]);

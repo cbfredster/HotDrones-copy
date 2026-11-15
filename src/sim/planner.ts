@@ -1,7 +1,7 @@
 import { BeliefMap } from "./belief";
 import { Config } from "./config";
 import { Fire, Wind } from "./environment";
-import { FUEL, Terrain, Tile } from "./terrain";
+import { FUEL, Terrain, Tile, terrainTarget } from "./terrain";
 
 // A task zone: one chunk of the believed fire front that drones can bid on.
 export interface Zone {
@@ -41,7 +41,7 @@ export function tileThreat(
 // Group the believed fire front into zones and score them.
 export function computeZones(belief: BeliefMap, terrain: Terrain, wind: Wind, cfg: Config): Zone[] {
   const { w, h, type } = terrain;
-  const v = terrain.village[4];
+  const v = terrainTarget(terrain);
   const vx = v % w;
   const vy = Math.floor(v / w);
   const zs = cfg.zoneSize;

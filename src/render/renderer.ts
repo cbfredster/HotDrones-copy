@@ -63,7 +63,7 @@ export class Renderer {
   // Terrain colours with simple hill shading, drawn once.
   private buildTerrain() {
     const { w, h, height, type } = this.world.terrain;
-    const hs = this.world.cfg.heightScale;
+    const hs = this.world.initialGeo ? Math.max(1, ...height) : this.world.cfg.heightScale;
     const c = document.createElement("canvas");
     c.width = w;
     c.height = h;
@@ -143,6 +143,14 @@ export class Renderer {
     for (const v of world.terrain.village) {
       const x = (v % w) * s;
       const y = Math.floor(v / w) * s;
+      if (world.initialGeo) {
+        ctx.strokeStyle = world.env.villageLost ? "#e5484d" : "#ffd23f";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(x + s / 2, y + s / 2, Math.max(3, s * 0.6), 0, Math.PI * 2);
+        ctx.stroke();
+        continue;
+      }
       ctx.fillStyle = world.env.fire[v] === Fire.Unburnt ? "#f4e3c1" : "#5a3a2a";
       ctx.fillRect(x + s * 0.2, y + s * 0.4, s * 0.6, s * 0.5);
       ctx.fillStyle = "#b23a2a";

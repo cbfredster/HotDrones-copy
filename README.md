@@ -20,6 +20,19 @@ In the 3D view: drag to pan, wheel to zoom, **Q/E** rotate 90° (hills hide thin
 
 Open `results/report.html` after running the experiments for the charts.
 
+## Real-location terrain
+
+Choose **Terrain → Real location** to search a place or enter coordinates, load a 2/4/8 km area,
+and place an ignition, hypothetical drone base and protected target on the actual terrain preview.
+Press **Apply location**, then Play or Step. New run, coordination changes, replay and shared scenarios
+retain the exact loaded terrain. Procedural mode remains available.
+
+The server loads Copernicus GLO-90 elevation via Open-Meteo and ESA WorldCover 2021 land cover from
+windowed public GeoTIFFs, without paid credentials. Bundled sourced Loch Lomond and Sierra Nevada
+examples work offline. This is an illustrative model, not an operational wildfire forecast.
+See [geographic setup, attribution, coverage and unit assumptions](docs/geography.md).
+Run `npm run test:geography` for deterministic provider, simulation and persistence checks.
+
 The original top-down 2D version is frozen in [`BASIC/`](BASIC/README.md) (tag `v-2d-basic`):
 
 ```bash

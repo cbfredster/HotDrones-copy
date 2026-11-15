@@ -3,6 +3,7 @@
 // enters it on the "Challenge the swarm" board, where the server re-runs it in every mode.
 import type { Config } from "../sim/config";
 import type { RecordedAction } from "../sim/judge";
+import { validateGeoScenario, type GeoScenario } from "../sim/geography";
 import { $, input } from "../ui/dom";
 import { api } from "./api";
 import type { Hooks } from "./index";
@@ -12,6 +13,7 @@ interface StoredScenario {
   name: string;
   cfg: Partial<Config>;
   actions: RecordedAction[];
+  geography?: GeoScenario;
 }
 
 export class Scenarios {
@@ -29,15 +31,22 @@ export class Scenarios {
   loadFromUrl(): boolean {
     const id = new URLSearchParams(location.search).get("scenario");
     if (!id || !/^[a-z0-9]{4,12}$/.test(id)) return false;
+    const initialWorld = this.hooks.getWorld();
     void (async () => {
       const s = await api.getJson<StoredScenario>(`/api/scenarios/${id}`);
+      if (this.hooks.getWorld() !== initialWorld) return; // a newer user-selected run wins over this response
       if (!s) {
         this.show($("scenarioShare"), `Could not load scenario “${id}” (is the server running?).`);
         return;
       }
-      input("scenarioName").value = s.name;
-      this.hooks.startRun(s.cfg, s.actions);
-      this.show($("scenarioShare"), `Replaying “${s.name}”: ${s.actions.length} recorded judge action${s.actions.length === 1 ? "" : "s"} will happen at their original ticks.`);
+      try {
+        const geography = s.geography === undefined ? undefined : validateGeoScenario(s.geography);
+        this.hooks.startRun(s.cfg, s.actions, geography);
+        input("scenarioName").value = s.name;
+        this.show($("scenarioShare"), `Replaying “${s.name}”: ${s.actions.length} recorded judge action${s.actions.length === 1 ? "" : "s"} will happen at their original ticks.${geography ? " Geographic data is restored from the saved snapshot." : ""}`);
+      } catch {
+        this.show($("scenarioShare"), "This saved scenario has invalid geographic data. The current run is still available.");
+      }
     })();
     return true;
   }
@@ -53,8 +62,8 @@ export class Scenarios {
     this.saving = true;
     this.show(out, "Saving…");
     try {
-      const name = input("scenarioName").value.trim() || `Seed ${world.cfg.seed}, ${world.judgeLog.length} judge action${world.judgeLog.length === 1 ? "" : "s"}`;
-      const r = await api.postJson<{ id: string }>("/api/scenarios", { name, cfg: world.initialCfg, actions: world.judgeLog });
+      const name = input("scenarioName").value.trim() || `${world.initialGeo?.metadata.label ?? `Seed ${world.cfg.seed}`}, ${world.judgeLog.length} judge action${world.judgeLog.length === 1 ? "" : "s"}`;
+      const r = await api.postJson<{ id: string }>("/api/scenarios", { name, cfg: world.initialCfg, actions: world.judgeLog, ...(world.initialGeo ? { geography: world.initialGeo } : {}) });
       if (!r?.id) {
         this.show(out, "Could not save: the API server is not reachable. (The run can still be replayed from the end card.)");
         return;

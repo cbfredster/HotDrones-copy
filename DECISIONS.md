@@ -251,3 +251,25 @@ recorded action log), which is the single write path the ground rules ask for.
 - The theta prior `[0.2, -0.2, -0.3, -0.4, 0.1]` matters: starting from zero lost the village 7/60.
 - Not done: the Challenge board, dashboard and server challenge still use the original three modes.
 
+## Real-location scenarios — 15 November 2026
+
+- Keep the procedural path and frozen BASIC unchanged. Add a synchronous optional `GeoScenario` input
+  to World; all provider access and normalization occur outside `src/sim` before construction.
+- Use Open-Meteo/GeoNames search, Copernicus GLO-90 elevation batches with bilinear interpolation, and
+  nearest full-resolution ESA WorldCover 2021 v200 classes via bounded COG windows. `geotiff` decodes
+  public byte ranges; no separate GIS service, credentials or unrestricted URL proxy are needed.
+- Persist versioned normalized arrays and source provenance with scenario documents in file/Mongo,
+  not coordinates/cache references. Validate/copy/freeze inputs and build fresh typed arrays per run.
+  Replay, mode changes and the board use the same snapshot without network access.
+- Geographic x is east, y south; height is relative elevation metres divided by metres per cell.
+  The renderer's existing common 0.4 vertical scale remains visual only. Tile-based algorithm ranges,
+  speed and spread remain illustrative; area selection changes their physical interpretation.
+- Never insert a lake or village into imported geography. The single protected target and base are
+  explicitly hypothetical; a dry map uses a hypothetical supply station at base. This preserves
+  target-scoring invariants with a target accessor instead of assuming a nine-cell village.
+- Bound areas to 2/4/8 km at 64×64 and supported latitudes −60…75°, reject missing core coverage,
+  use explicit search and cancellable/stale-safe previews, and preserve the current world until Apply.
+  Genuine live-fetched Loch Lomond/Sierra Nevada examples provide offline demos with attribution.
+- Entire Brain/Graph were unavailable (`entire: command not found`). Each lookup used the documented
+  direct-inspection fallback; durable decisions are recorded here instead. See docs/geography.md.
+

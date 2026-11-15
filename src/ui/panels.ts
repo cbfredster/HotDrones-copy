@@ -2,6 +2,7 @@
 // Read-only views of world state.
 import { BASE_ID, inBlackout } from "../sim/comms";
 import { Fire } from "../sim/environment";
+import { burntHectares, gridToGeo } from "../sim/geography";
 import { FUEL, TILE_NAMES, Tile } from "../sim/terrain";
 import type { Drone } from "../sim/drone";
 import { FEATURE_NAMES } from "../sim/unified";
@@ -17,9 +18,9 @@ export function updateStats(world: World) {
   const done = m.extinguishedAt >= 0 ? `<b class="good">fire out at t=${m.extinguishedAt}</b>` : `<b>${m.burning} tiles burning</b>`;
   $("stats").innerHTML = `
     <span>Tick</span><b>${m.tick}</b>
-    <span>Village</span>${status}
+    <span>${world.initialGeo ? "Protected target" : "Village"}</span>${status}
     <span>Fire</span>${done}
-    <span>Area burnt</span><b>${m.burnt} tiles</b>
+    <span>Area burnt</span><b>${m.burnt} tiles${world.initialGeo ? ` · ${burntHectares(world.initialGeo, m.burnt).toFixed(2)} ha` : ""}</b>
     <span>Drones</span><b>${alive}/${world.drones.length} flying</b>
     <span>Water drops</span><b>${m.waterDropped}</b>
     <span>Base comms</span><b class="${world.baseOnline ? "good" : "bad"}">${world.baseOnline ? "online" : "down"}</b>${
@@ -122,7 +123,7 @@ function tileHtml(world: World, tile: number): string {
   const type = terrain.type[tile] as Tile;
   const fire = env.fire[tile];
   const tags: string[] = [];
-  if (terrain.village.includes(tile)) tags.push("village");
+  if (terrain.village.includes(tile)) tags.push(world.initialGeo ? "hypothetical protected target" : "village");
   if (Math.round(world.base.x) === x && Math.round(world.base.y) === y) tags.push("home base");
   if (type === Tile.Water) tags.push("water source");
   const tower = world.towers.find((t) => t.x === x && t.y === y);
@@ -152,7 +153,8 @@ function tileHtml(world: World, tile: number): string {
   return `
     <div class="stats">
       <span>Tile</span><b>(${x}, ${y}) — ${TILE_NAMES[type]}${tags.length ? " · " + tags.join(", ") : ""}</b>
-      <span>Height</span><b>${terrain.height[tile].toFixed(1)}</b>
+      <span>Height</span><b>${terrain.height[tile].toFixed(2)} tile units${world.initialGeo ? ` · ${world.initialGeo.elevationM[tile].toFixed(1)} m source elevation` : ""}</b>
+      ${world.initialGeo ? `<span>Coordinates</span><b>${gridToGeo(world.initialGeo, x, y).lat.toFixed(5)}, ${gridToGeo(world.initialGeo, x, y).lon.toFixed(5)}</b><span>WorldCover 2021</span><b>Class ${world.initialGeo.landCover[tile]}</b>` : ""}
       <span>Fire</span><span>${fireText}</span>
       <span>Wetness</span><b>${Math.round(env.wetness[tile] * 100)}%</b>
       <span>Smoke</span><b>${smoke.toFixed(2)} (${smokeText})</b>

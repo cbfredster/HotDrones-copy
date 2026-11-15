@@ -80,12 +80,13 @@ export class StructureLayer {
   private readonly tmp = new Color();
   private readonly towerTops = new Map<number, Vector3>(); // comms node id -> antenna tip
   private readonly towerMeshes: { tower: Tower; group: Group; beacon: Mesh; standing: boolean }[] = [];
+  private readonly targetMarker?: Mesh;
 
   constructor(private world: World, terrain: TerrainLayer) {
     const { w, h } = world.terrain;
 
     // ---------------------------------------------------------------- village
-    const tiles = [...new Set(world.terrain.village)];
+    const tiles = world.initialGeo ? [] : [...new Set(world.terrain.village)];
     const wallGeo = new BoxGeometry(0.6, 0.34, 0.6).translate(0, 0.17, 0);
     const roofGeo = gableRoof(0.38, 0.36, 0.28).translate(0, 0.34, 0);
     this.walls = new InstancedMesh(wallGeo, new MeshLambertMaterial({ flatShading: true }), tiles.length);
@@ -110,6 +111,16 @@ export class StructureLayer {
     }
     this.group.add(this.walls, this.roofs);
 
+    if (world.initialGeo) {
+      // A ring marks a hypothetical protected asset; it does not claim a settlement exists here.
+      const i = world.initialGeo.target;
+      this.targetMarker = new Mesh(new RingGeometry(0.35, 0.6, 24).rotateX(-Math.PI / 2),
+        new MeshBasicMaterial({ color: 0xffd23f, side: DoubleSide }));
+      this.targetMarker.position.set(i % w, terrain.topY[i] + 0.04, Math.floor(i / w));
+      this.group.add(this.targetMarker);
+      this.reserved.add(i);
+    }
+
     // ---------------------------------------------------------------- home base
     const bx = world.base.x;
     const by = world.base.y;
@@ -119,6 +130,8 @@ export class StructureLayer {
     let lowY = Infinity;
     for (let dy = -1; dy <= 1; dy++) {
       for (let dx = -1; dx <= 1; dx++) {
+        // Imported terrain is never levelled: a compact hypothetical pad uses its own cell.
+        if (world.initialGeo && (dx !== 0 || dy !== 0)) continue;
         const x = Math.round(bx) + dx;
         const y = Math.round(by) + dy;
         if (x < 0 || y < 0 || x >= w || y >= h) continue;
@@ -135,11 +148,11 @@ export class StructureLayer {
 
     const plinthH = padY - lowY + 0.3;
     const plinth = new Mesh(
-      new CylinderGeometry(1.32, 1.42, plinthH, 8).translate(0, -plinthH / 2, 0),
+      new CylinderGeometry(world.initialGeo ? 0.44 : 1.32, world.initialGeo ? 0.47 : 1.42, plinthH, 8).translate(0, -plinthH / 2, 0),
       new MeshLambertMaterial({ color: rgb(0x8d949c), flatShading: true }),
     );
     const pad = new Mesh(
-      new CylinderGeometry(1.36, 1.36, 0.14, 8).translate(0, 0.07, 0),
+      new CylinderGeometry(world.initialGeo ? 0.45 : 1.36, world.initialGeo ? 0.45 : 1.36, 0.14, 8).translate(0, 0.07, 0),
       new MeshLambertMaterial({ color: PAD, flatShading: true }),
     );
     const markMat = new MeshLambertMaterial({ color: PAD_MARK, flatShading: true });
@@ -149,6 +162,9 @@ export class StructureLayer {
     hRight.position.x = 0.33;
     const hBar = new Mesh(new BoxGeometry(0.5, 0.03, 0.16), markMat);
     hBar.position.set(0, 0.155, 0);
+    if (world.initialGeo) {
+      for (const mark of [hLeft, hRight, hBar]) { mark.scale.set(0.33, 1, 0.33); mark.position.x *= 0.33; }
+    }
     for (const m of [plinth, pad, hLeft, hRight, hBar]) {
       m.castShadow = true;
       m.receiveShadow = true;
@@ -158,8 +174,8 @@ export class StructureLayer {
     // The mast: its tip is exactly where the sim puts the base's comms node
     // (terrain height + BASE_MAST_HEIGHT), so links to the base start in the right place.
     const tipY = (terrainHeightAt(world.terrain, bx, by) + BASE_MAST_HEIGHT) * V_SCALE;
-    const mastX = 1.02;
-    const mastZ = -1.02;
+    const mastX = world.initialGeo ? 0.28 : 1.02;
+    const mastZ = world.initialGeo ? -0.28 : -1.02;
     const mastLen = Math.max(0.6, tipY - (padY + 0.14));
     this.mast = new Mesh(
       new BoxGeometry(0.09, mastLen, 0.09).translate(0, mastLen / 2, 0),
@@ -244,6 +260,9 @@ export class StructureLayer {
 
   /** Char a house when its tile burns. No-op for tiles without one. */
   applyTile(i: number, vis: TileVis, fog: number) {
+    if (this.targetMarker && i === this.world.initialGeo!.target) {
+      (this.targetMarker.material as MeshBasicMaterial).color.setHex(vis === TileVis.Unburnt ? 0xffd23f : 0xe5484d);
+    }
     const k = this.houseOf.get(i);
     if (k !== undefined) this.paintHouse(k, vis, fog);
   }

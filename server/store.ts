@@ -6,6 +6,7 @@ import { dirname } from "node:path";
 import { MongoClient, type Collection } from "mongodb";
 import type { Config } from "../src/sim/config";
 import type { RecordedAction } from "../src/sim/judge";
+import { validateGeoScenario, type GeoScenario } from "../src/sim/geography";
 import type { IntegrationStatus } from "./env";
 
 export interface Outcome {
@@ -18,7 +19,7 @@ export interface Outcome {
   extinguishedAt: number;
 }
 
-/** A scenario is everything needed to replay a run exactly: config (incl. seed) + recorded judge actions. */
+/** Exact replay inputs: config, recorded actions, and (for real locations) the durable initial data. */
 export interface Scenario {
   _id: string; // short id used in ?scenario=<id>
   name: string;
@@ -26,6 +27,7 @@ export interface Scenario {
   createdAt: string;
   cfg: Partial<Config>;
   actions: RecordedAction[];
+  geography?: GeoScenario;
   /** How the same scenario went in every coordination mode (filled in by the challenge runner). */
   outcomes?: Record<string, Outcome>;
   /** Higher = hurt the swarm more. Used to rank the board. */
@@ -47,6 +49,13 @@ export interface ScenarioStore {
 export const newScenarioId = () => randomBytes(5).toString("base64url").replace(/[-_]/g, "x").slice(0, 7).toLowerCase();
 
 const byHurt = (a: Scenario, b: Scenario) => (b.hurt ?? -1) - (a.hurt ?? -1) || b.createdAt.localeCompare(a.createdAt);
+
+/** Own the document's buffers, and validate geographic inputs again at the storage boundary. */
+function copyScenario(s: Scenario): Scenario {
+  const copy = structuredClone(s);
+  if (copy.geography !== undefined) copy.geography = validateGeoScenario(copy.geography);
+  return copy;
+}
 
 export class MongoStore implements ScenarioStore {
   kind = "mongo";
@@ -81,16 +90,22 @@ export class MongoStore implements ScenarioStore {
   }
 
   save(s: Scenario) {
-    return this.run(async () => void (await this.col.insertOne(s)));
+    const owned = copyScenario(s);
+    return this.run(async () => void (await this.col.insertOne(owned)));
   }
   get(id: string) {
-    return this.run(() => this.col.findOne({ _id: id }));
+    return this.run(async () => {
+      const s = await this.col.findOne({ _id: id });
+      return s ? copyScenario(s) : null;
+    });
   }
   update(id: string, patch: Partial<Scenario>) {
-    return this.run(async () => void (await this.col.updateOne({ _id: id }, { $set: patch })));
+    const owned = structuredClone(patch);
+    if (owned.geography !== undefined) owned.geography = validateGeoScenario(owned.geography);
+    return this.run(async () => void (await this.col.updateOne({ _id: id }, { $set: owned })));
   }
   board(limit: number) {
-    return this.run(() => this.col.find({}, { projection: { actions: 0 } }).sort({ hurt: -1, createdAt: -1 }).limit(limit).toArray() as Promise<Scenario[]>);
+    return this.run(() => this.col.find({}, { projection: { actions: 0, geography: 0 } }).sort({ hurt: -1, createdAt: -1 }).limit(limit).toArray() as Promise<Scenario[]>);
   }
 }
 
@@ -102,7 +117,9 @@ export class FileStore implements ScenarioStore {
     mkdirSync(dirname(path), { recursive: true });
     if (existsSync(path)) {
       try {
-        for (const s of JSON.parse(readFileSync(path, "utf8")) as Scenario[]) this.items.set(s._id, s);
+        for (const s of JSON.parse(readFileSync(path, "utf8")) as Scenario[]) {
+          try { this.items.set(s._id, copyScenario(s)); } catch { /* skip a malformed geographic document */ }
+        }
       } catch {
         /* a corrupt file just starts empty */
       }
@@ -117,19 +134,22 @@ export class FileStore implements ScenarioStore {
     writeFileSync(this.path, JSON.stringify([...this.items.values()], null, 1));
   }
   async save(s: Scenario) {
-    this.items.set(s._id, s);
+    this.items.set(s._id, copyScenario(s));
     this.flush();
   }
   async get(id: string) {
-    return this.items.get(id) ?? null;
+    const s = this.items.get(id);
+    return s ? copyScenario(s) : null;
   }
   async update(id: string, patch: Partial<Scenario>) {
     const s = this.items.get(id);
     if (!s) return;
-    Object.assign(s, patch);
+    const owned = structuredClone(patch);
+    if (owned.geography !== undefined) owned.geography = validateGeoScenario(owned.geography);
+    Object.assign(s, owned);
     this.flush();
   }
   async board(limit: number) {
-    return [...this.items.values()].sort(byHurt).slice(0, limit).map(({ actions, ...rest }) => ({ ...rest, actions: [] }));
+    return [...this.items.values()].sort(byHurt).slice(0, limit).map(({ actions, geography, ...rest }) => structuredClone({ ...rest, actions: [] }));
   }
 }

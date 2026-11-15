@@ -42,13 +42,14 @@ export class IsoScene {
   }
 
   /** Aim the sun and size its shadow box to cover a w x h map whose tallest point is maxY. */
-  fitToMap(w: number, h: number, maxY: number) {
+  fitToMap(w: number, h: number, maxY: number, fullHeight = false) {
     const cx = (w - 1) / 2;
     const cz = (h - 1) / 2;
-    const radius = Math.hypot(w, h) / 2 + 2;
+    const radius = Math.hypot(w, h, fullHeight ? maxY : 0) / 2 + 2;
+    const cy = fullHeight ? maxY / 2 : 0;
     const dir = new Vector3(-0.55, 1.0, -0.32).normalize();
-    this.sun.target.position.set(cx, 0, cz);
-    this.sun.position.set(cx + dir.x * radius * 2, dir.y * radius * 2, cz + dir.z * radius * 2);
+    this.sun.target.position.set(cx, cy, cz);
+    this.sun.position.set(cx + dir.x * radius * 2, cy + dir.y * radius * 2, cz + dir.z * radius * 2);
     const cam = this.sun.shadow.camera;
     cam.left = -radius;
     cam.right = radius;

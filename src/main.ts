@@ -4,12 +4,14 @@ import "./style.css";
 import { Integrations } from "./integrations";
 import { IsoRenderer, IsoViewOptions, PickResult } from "./render/iso";
 import { Config, Mode } from "./sim/config";
+import type { GeoScenario } from "./sim/geography";
 import { JudgeAction, RecordedAction, ReplayCursor, applyJudgeAction } from "./sim/judge";
 import { World } from "./sim/world";
 import { $, input, isTyping } from "./ui/dom";
 import { RunOverlays } from "./ui/endcard";
 import { Minimap } from "./ui/minimap";
 import { updateSelection, updateStats } from "./ui/panels";
+import { GeographyControls } from "./ui/geography";
 
 // The old loop ran 1-12 whole ticks per animation frame. 720 ticks/s is that maximum at
 // 60 fps; the slider now also goes far below one tick per frame, which is what makes the
@@ -24,6 +26,8 @@ const BLACKOUT_RADIUS = 7;
 type Tool = "select" | "ignite" | "blackout" | "crash";
 
 let world: World;
+let activeGeography: GeoScenario | undefined;
+let geographicControls: GeographyControls | undefined;
 let iso: IsoRenderer;
 let replay: ReplayCursor | null = null;
 let playing = false;
@@ -49,7 +53,7 @@ const view: IsoViewOptions = {
 const stage = $("stage");
 const minimap = new Minimap($<HTMLCanvasElement>("minimap"), $<HTMLButtonElement>("minimapMode"), (x, y) => iso.focus(x, y));
 const overlays = new RunOverlays({
-  replay: () => startRun(world.initialCfg, structuredClone(world.judgeLog)),
+  replay: () => startRun(world.initialCfg, structuredClone(world.judgeLog), world.initialGeo),
   newSeed: () => {
     input("seed").value = String(world.cfg.seed + 1);
     newRunFromControls();
@@ -60,14 +64,16 @@ const overlays = new RunOverlays({
 // read the world; their one write path is the `judge` function below.
 const integrations = new Integrations({
   judge: (a) => judge(a),
-  startRun: (cfg, actions) => startRun(cfg, actions),
+  startRun: (cfg, actions, geography) => startRun(cfg, actions, geography),
   getWorld: () => world,
 });
 
 // ---------------------------------------------------------------- runs
 /** Start a run. With `actions`, every recorded judge action is re-applied at its original tick. */
-function startRun(cfg: Partial<Config>, actions?: RecordedAction[]) {
-  world = new World(cfg);
+function startRun(cfg: Partial<Config>, actions?: RecordedAction[], geography?: GeoScenario) {
+  world = new World(cfg, geography);
+  activeGeography = world.initialGeo;
+  geographicControls?.setActive(activeGeography);
   replay = actions && actions.length ? new ReplayCursor(actions) : null;
   if (!iso) {
     iso = new IsoRenderer(stage, world);
@@ -101,7 +107,7 @@ function newRunFromControls() {
     droneCount: Number(input("droneCount").value),
     towers: Number(input("towers").value),
     spawnInLine: input("spawnLine").checked,
-  });
+  }, undefined, activeGeography);
 }
 
 /** The single path for judge writes: applies the action and records it with its tick. */
@@ -386,6 +392,11 @@ function loop(now: number) {
 
 setTps(20);
 setTool("select");
+geographicControls = new GeographyControls((geography) => {
+  setPlaying(false);
+  activeGeography = geography;
+  newRunFromControls();
+});
 if (introPending) {
   setPlaying(false);
   $("intro").hidden = false;

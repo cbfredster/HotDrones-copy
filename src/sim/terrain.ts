@@ -26,6 +26,14 @@ export interface Terrain {
   type: Uint8Array; // Tile enum per tile
   village: number[]; // tile indices of the protected village
   base: { x: number; y: number };
+  /** Geographic terrain only: conversion for inspection, never a visual exaggeration. */
+  metresPerCell?: number;
+  elevationOffsetM?: number;
+}
+
+/** Geographic runs protect one hypothetical target; procedural maps retain the village centre. */
+export function terrainTarget(t: Terrain): number {
+  return t.village[4] ?? t.village[0];
 }
 
 // Smooth value noise with several octaves -> rolling hills.
@@ -170,7 +178,7 @@ export const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b
 export function pickTowerSites(t: Terrain, count: number): { x: number; y: number }[] {
   const sites: { x: number; y: number }[] = [];
   if (count <= 0) return sites;
-  const v = t.village[4] ?? t.village[0];
+  const v = terrainTarget(t);
   const keepOut = [
     { x: t.base.x, y: t.base.y, r: 12 },
     { x: v % t.w, y: Math.floor(v / t.w), r: 5 },

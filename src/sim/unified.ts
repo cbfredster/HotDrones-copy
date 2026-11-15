@@ -66,6 +66,7 @@ import { BASE_ID, terrainHeightAt } from "./comms";
 import type { Drone } from "./drone";
 import { Environment, Fire } from "./environment";
 import { Zone, computeZones } from "./planner";
+import { terrainTarget } from "./terrain";
 import type { World } from "./world";
 
 // ------------------------------------------------------------------ data types
@@ -153,9 +154,10 @@ export class UnifiedStack {
       this.agents.set(d.id, new UnifiedAgent());
     }
     // Static part of each tile's task relevance: how close it is to the village.
-    const { w: W, village } = w.terrain;
-    const vx = village[4] % W;
-    const vy = Math.floor(village[4] / W);
+    const { w: W } = w.terrain;
+    const target = terrainTarget(w.terrain);
+    const vx = target % W;
+    const vy = Math.floor(target / W);
     this.relevance = new Float32Array(n);
     for (let i = 0; i < n; i++) this.relevance[i] = 1 + 4 * Math.exp(-Math.hypot((i % W) - vx, Math.floor(i / W) - vy) / 10);
   }
@@ -430,7 +432,7 @@ export class UnifiedStack {
     const w = this.w;
     const c = w.cfg;
     const W = w.terrain.w;
-    const v = w.terrain.village[4];
+    const v = terrainTarget(w.terrain);
     const village = Math.exp(-Math.hypot(z.tx - (v % W), z.ty - Math.floor(v / W)) / 10);
     const distance = Math.hypot(z.tx - d.x, z.ty - d.y) / c.width;
     const smoke = Math.min(1, w.env.smokeAt(z.tx, z.ty) / c.thickSmoke);

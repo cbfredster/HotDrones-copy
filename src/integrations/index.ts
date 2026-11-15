@@ -10,6 +10,7 @@
 import type { Config } from "../sim/config";
 import type { JudgeAction, RecordedAction } from "../sim/judge";
 import type { World } from "../sim/world";
+import type { GeoScenario } from "../sim/geography";
 import { $, input } from "../ui/dom";
 import { api } from "./api";
 import { Ambience, type Threat } from "./audio/ambience";
@@ -28,7 +29,7 @@ const SKIP_EVENTS = new Set<SimEvent["type"]>(["waterDrop"]); // too many to sto
 
 export interface Hooks {
   judge: (a: JudgeAction) => boolean;
-  startRun: (cfg: Partial<Config>, actions?: RecordedAction[]) => void;
+  startRun: (cfg: Partial<Config>, actions?: RecordedAction[], geography?: GeoScenario) => void;
   getWorld: () => World;
 }
 
