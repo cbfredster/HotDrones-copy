@@ -23,8 +23,8 @@ export interface ChartOpts {
 
 // Mode colours: the app's hues, stepped for a dark surface and checked with the dataviz
 // validator (lightness band, colour-blind separation, contrast) against #1d2026.
-export const MODE_COLOR: Record<string, string> = { swarm: "#d07a00", central: "#22a0c2", greedy: "#8052d6", none: "#7d848d" };
-export const MODE_LABEL: Record<string, string> = { swarm: "Swarm (ours)", central: "Central control", greedy: "No coordination", none: "No drones" };
+export const MODE_COLOR: Record<string, string> = { swarm: "#d07a00", central: "#22a0c2", greedy: "#8052d6", cbba: "#3fa66a", unified: "#d6336c", none: "#7d848d" };
+export const MODE_LABEL: Record<string, string> = { swarm: "Swarm (ours)", central: "Central control", greedy: "No coordination", cbba: "CBBA", unified: "Unified stack", none: "No drones" };
 export const INK = { text: "#e8e6e3", dim: "#9aa0a6", grid: "#2c313a", surface: "#1d2026" };
 
 const NS = "http://www.w3.org/2000/svg";

@@ -159,6 +159,27 @@ In a 12-seed check it burnt about 30% less than swarm mode (691 vs 980 tiles; vi
 held up the same way with poor comms and with the base offline. It costs about twice as much CPU per tick.
 Select a drone to see its plan and winning bids.
 
+### Unified stack mode: six fixes in one algorithm
+
+Pick **Unified stack (CBBA + DTN + IB + CI + MARL + DMPC)** in the Coordination menu. It stacks one answer
+per problem into a single mode (`src/sim/unified.ts`), each a layer the drones run every tick:
+
+| Problem | Layer | What it does here |
+| --- | --- | --- |
+| 1 Centralised task allocation | **CBBA** | Decentralised bundle auction over zone slots (`cbba.ts`, unchanged). |
+| 2 Communication loss | **DTN** | No whole-map swaps. Observations travel as bundles that every node stores, carries and forwards to whoever it meets next (epidemic routing within a per-tick byte budget; cable sync when docked). |
+| 3 Bandwidth waste | **Information Bottleneck + event triggers** | A tile is only sent when it changed AND its task relevance beats its bit cost (`utility > (beta + lambda) * bits`). Lambda prices a hard bit budget by dual ascent. Severity goes out as 2 bits, variance as 4. |
+| 4 Conflicting fire estimates | **Covariance Intersection** | Every tile has a variance (sensor distance, smoke, age). Agreeing estimates fuse with fast CI (never over-confident with relayed, correlated data); disagreeing ones are settled by the lower aged variance. |
+| 5 Static behaviour | **Graph attention + MARL** | Each drone attends over its teammates (GAT-style scores of distance, freshness, water); a linear policy over zone features, including attention-weighted coverage, scales zone values before CBBA bids. Weights learn online by REINFORCE after every drop, and drones in contact average them. |
+| 6 Uncoordinated movement | **Distributed MPC** | Every tick each drone picks the heading that minimises time-to-go + energy (climb, headwind) + hazard (smoke, fire) + separation from teammates' published plans, in id order (Gauss-Seidel), then flies the first step. |
+
+Over 60 runs (20 seeds x {range 14, range 8, base offline at 120}), unified lost the village 4/60 times against
+CBBA's 5/60 and swarm's 14/60, and lost no drones. It burnt ~12% more than CBBA (789 vs 702 tiles; swarm 1015).
+It sends roughly 1000x fewer bytes than whole-map syncing. Ablations: without online learning it burnt 870
+(7/60 villages lost); without MPC it burnt 765 but lost 2 drones. It costs ~1 s per 2000-tick run (CBBA ~0.5 s).
+The attention weights are hand-set, not trained; only the policy weights theta learn, and only within a run.
+Select a drone to see its CBBA plan, DTN store, IB sent/suppressed counts, CI fusions, attention and theta.
+
 ### Staying alive
 
 - **Battery** drains every tick, faster flying into a headwind or climbing. A drone heads home when it has just enough charge to make it back, with a safety margin.

@@ -1,6 +1,6 @@
 // All tunable numbers live here so the team can tweak behaviour in one place.
 
-export type Mode = "swarm" | "central" | "greedy" | "cbba";
+export type Mode = "swarm" | "central" | "greedy" | "cbba" | "unified";
 
 export interface Config {
   seed: number;
@@ -79,6 +79,15 @@ export interface Config {
   cbbaBundleSize: number; // zones a drone plans ahead: this load, then the next refills
   cbbaHorizon: number; // ticks: a zone reached this much later is worth 1/e as much
   cbbaRounds: number; // most build + consensus rounds per planning step
+
+  // Unified mode (src/sim/unified.ts): CBBA + DTN + IB/event triggers + CI fusion + GAT/MARL + DMPC.
+  // Only read when mode is "unified". CBBA settings above are shared with it.
+  unifiedLinkBytes: number; // DTN: bytes each node may receive per tick from its group
+  unifiedBundleTtl: number; // DTN: ticks a bundle is carried before it is dropped
+  unifiedBitBudget: number; // IB: target bits a node originates per tick (lambda adapts to it)
+  unifiedBeta: number; // IB: relevance-vs-rate trade-off (an entry's utility must beat beta * bits)
+  unifiedProcessNoise: number; // CI: variance added per tick of age to an estimate
+  unifiedLearningRate: number; // MARL: policy-gradient step size
 }
 
 export const defaultConfig: Config = {
@@ -145,6 +154,13 @@ export const defaultConfig: Config = {
   cbbaBundleSize: 3,
   cbbaHorizon: 90,
   cbbaRounds: 6,
+
+  unifiedLinkBytes: 400,
+  unifiedBundleTtl: 400,
+  unifiedBitBudget: 300,
+  unifiedBeta: 0.02,
+  unifiedProcessNoise: 0.05,
+  unifiedLearningRate: 0.1,
 };
 
 // Everything added since the original 2D version, switched off. With these overrides the
