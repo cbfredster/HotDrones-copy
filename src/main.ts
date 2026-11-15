@@ -245,6 +245,7 @@ document.addEventListener("click", (e) => {
 window.addEventListener("keydown", (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey || isTyping(e)) return;
   if ((e.target as HTMLElement)?.tagName === "BUTTON" && (e.key === " " || e.key === "Enter")) return;
+  if (introPending && "qer".includes(e.key.toLowerCase())) return; // the view is fixed while the clouds are up
   switch (e.key.toLowerCase()) {
     case " ":
       e.preventDefault();

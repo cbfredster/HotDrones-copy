@@ -7,11 +7,15 @@
 //   - every puff stretched differently on each axis and tumbled to its own angle;
 //   - clumps of different kinds: low flat banks, rounded heaps, and tall towers;
 //   - clumps scattered with uneven gaps, over a low base deck that keeps the map hidden.
+//
+// The clouds are laid out over exactly what the camera can see (fit()), not just over
+// the map, so the corners of the screen are covered too.
 import { BufferGeometry, Color, Euler, Group, IcosahedronGeometry, InstancedBufferAttribute, InstancedMesh, Matrix4, MeshLambertMaterial, Quaternion, Vector3 } from "three";
 import { TerrainLayer } from "./terrain";
 import { addInstanceAlpha, clamp01, hash01, withInstanceAlpha } from "./util";
 
-const MARGIN = 20; // clouds extend this far beyond the map, so the slab's sides and the corners are hidden too
+const MARGIN = 20; // fallback only: how far beyond the map the clouds reach when the view is unknown
+const SCREEN_PAD = 0.14; // extra beyond each screen edge, as a share of the view, so taller clouds don't leave gaps
 const DECK_SPACING = 4.2; // the low base deck
 const CLUMP_SPACING = 7.5; // the lumpy clouds on top of it
 const DRIFT = 46; // how far a puff travels while clearing
@@ -75,14 +79,74 @@ export class CloudLayer {
   private readonly p = new Vector3();
   private readonly s = new Vector3();
 
-  constructor(terrain: TerrainLayer) {
-    const { w, h, maxY } = terrain;
-    const cx = (w - 1) / 2;
-    const cz = (h - 1) / 2;
-    const maxD = Math.hypot(w / 2 + MARGIN, h / 2 + MARGIN);
-    const deckY = maxY + 3.0; // above the tallest hill, mast and drone
+  private readonly cx: number;
+  private readonly cz: number;
+  readonly deckY: number;
+
+  constructor(private readonly terrain: TerrainLayer) {
+    this.cx = (terrain.w - 1) / 2;
+    this.cz = (terrain.h - 1) / 2;
+    this.deckY = terrain.maxY + 3.0; // above the tallest hill, mast and drone
+    this.group.visible = false;
+  }
+
+  /**
+   * Lay the clouds out over the parallelogram of ground the camera sees at the cloud deck's
+   * height. `corners` are the screen's top-left, top-right, bottom-left and bottom-right
+   * corners projected onto that height (IsoCamera.screenCornersAt). Without corners, cover
+   * the map plus a margin.
+   */
+  fit(corners?: Vector3[]) {
+    const { w, h } = this.terrain;
+    let o: { x: number; z: number };
+    let e1: { x: number; z: number };
+    let e2: { x: number; z: number };
+    if (corners && corners.length === 4) {
+      const [tl, tr, bl] = corners;
+      e1 = { x: tr.x - tl.x, z: tr.z - tl.z }; // across the screen
+      e2 = { x: bl.x - tl.x, z: bl.z - tl.z }; // down the screen
+      // Grow the area by SCREEN_PAD on every side.
+      o = { x: tl.x - (e1.x + e2.x) * SCREEN_PAD, z: tl.z - (e1.z + e2.z) * SCREEN_PAD };
+      const g = 1 + 2 * SCREEN_PAD;
+      e1 = { x: e1.x * g, z: e1.z * g };
+      e2 = { x: e2.x * g, z: e2.z * g };
+    } else {
+      o = { x: -MARGIN, z: -MARGIN };
+      e1 = { x: w + 2 * MARGIN, z: 0 };
+      e2 = { x: 0, z: h + 2 * MARGIN };
+    }
+    // Rebuild from scratch.
+    for (const m of this.meshes) {
+      this.group.remove(m);
+      m.geometry.dispose();
+      (m.material as MeshLambertMaterial).dispose();
+    }
+    this.meshes.length = 0;
+    this.alphas.length = 0;
+    this.puffs.length = 0;
+
+    const { cx, cz, deckY } = this;
+    const far = [
+      [o.x, o.z],
+      [o.x + e1.x, o.z + e1.z],
+      [o.x + e2.x, o.z + e2.z],
+      [o.x + e1.x + e2.x, o.z + e1.z + e2.z],
+    ];
+    const maxD = Math.max(...far.map(([x, z]) => Math.hypot(x - cx, z - cz)));
     const euler = new Euler();
     let seed = 0;
+    // Visit points `spacing` apart across the area: cb(x, z).
+    const scatter = (spacing: number, cb: (x: number, z: number) => void) => {
+      const n1 = Math.max(1, Math.ceil(Math.hypot(e1.x, e1.z) / spacing));
+      const n2 = Math.max(1, Math.ceil(Math.hypot(e2.x, e2.z) / spacing));
+      for (let j = 0; j <= n2; j++) {
+        for (let i = 0; i <= n1; i++) {
+          const a = i / n1;
+          const b = j / n2;
+          cb(o.x + e1.x * a + e2.x * b, o.z + e1.z * a + e2.z * b);
+        }
+      }
+    };
 
     const add = (x: number, y: number, z: number, sx: number, sy: number, sz: number, key: number) => {
       let dx = x - cx;
@@ -114,21 +178,21 @@ export class CloudLayer {
     };
 
     // 1. A low, flat, overlapping deck: nothing below it can be seen.
-    for (let gz = -MARGIN; gz <= h + MARGIN; gz += DECK_SPACING) {
-      for (let gx = -MARGIN; gx <= w + MARGIN; gx += DECK_SPACING) {
+    scatter(DECK_SPACING, (gx, gz) => {
+      {
         const k = 1000 + seed++;
         const x = gx + (hash01(k, 11) - 0.5) * DECK_SPACING * 0.9;
         const z = gz + (hash01(k, 12) - 0.5) * DECK_SPACING * 0.9;
         const r = 2.6 + hash01(k, 13) * 1.4;
         add(x, deckY - 0.6 + hash01(k, 14) * 0.4, z, r * (0.9 + hash01(k, 15) * 0.6), r * (0.24 + hash01(k, 16) * 0.12), r * (0.9 + hash01(k, 17) * 0.6), k);
       }
-    }
+    });
 
     // 2. Lumpy clouds scattered over the deck, of three kinds, with uneven gaps between them.
-    for (let gz = -MARGIN; gz <= h + MARGIN; gz += CLUMP_SPACING) {
-      for (let gx = -MARGIN; gx <= w + MARGIN; gx += CLUMP_SPACING) {
+    scatter(CLUMP_SPACING, (gx, gz) => {
+      {
         const c = 5000 + seed++;
-        if (hash01(c, 20) < 0.18) continue; // a gap: just the flat deck here
+        if (hash01(c, 20) < 0.18) return; // a gap: just the flat deck here
         const ox = gx + (hash01(c, 21) - 0.5) * CLUMP_SPACING;
         const oz = gz + (hash01(c, 22) - 0.5) * CLUMP_SPACING;
         const kind = hash01(c, 23);
@@ -163,7 +227,7 @@ export class CloudLayer {
           add(x, y, z, r * (0.8 + hash01(k, 38) * 0.6), r * flat, r * (0.8 + hash01(k, 39) * 0.6), k);
         }
       }
-    }
+    });
 
     // Two lumpy shapes, so neighbouring puffs never look alike.
     const counts = [0, 0];
@@ -180,15 +244,23 @@ export class CloudLayer {
       this.group.add(mesh);
     }
     for (const p of this.puffs) this.meshes[p.mesh].setColorAt(p.slot, col.setRGB(p.shade, p.shade, Math.min(1, p.shade + 0.04)));
-    this.group.visible = false;
+    if (this.stateNow !== "clear") this.place(performance.now() / 1000);
   }
 
   get state() {
     return this.stateNow;
   }
 
+  /** 0 while covered, rising to 1 as the clouds finish clearing. */
+  get progress() {
+    if (this.stateNow === "covered") return 0;
+    if (this.stateNow === "clear") return 1;
+    return clamp01(this.t / this.duration);
+  }
+
   /** Cover the map at once. */
   cover() {
+    if (this.puffs.length === 0) this.fit();
     this.stateNow = "covered";
     this.t = 0;
     this.onDone = null;

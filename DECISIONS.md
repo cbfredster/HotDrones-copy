@@ -202,3 +202,9 @@ recorded action log), which is the single write path the ground rules ask for.
 - Shapes are deliberately irregular: two lumpy puff shapes (icosahedra with jittered vertices), each puff stretched
   and tilted differently, and three kinds of cloud (flat banks, heaps, tall towers) with uneven gaps, over a low
   flat deck that guarantees the map stays hidden. Kept at icosahedron detail 1 to hold the triangle count down.
+- **Clouds fill the whole screen, corners included.** They are laid out over the ground the camera actually
+  sees (the screen's corners projected onto the cloud deck, plus 14% padding), not a square around the map, and
+  are re-laid if the window changes shape while covered. The camera is locked (no drag, zoom, Q/E/R or the
+  camera buttons) until the clouds have parted, because the layout is for the home view.
+- While fully covered, the map layers are not drawn (saves roughly 450k triangles) and the background is
+  cloud-coloured, so any gap between puffs still reads as cloud. Both fade back as the clouds part.

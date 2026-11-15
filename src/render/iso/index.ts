@@ -8,7 +8,7 @@
 //   smoke.ts       smoke puffs                     drones.ts   quadcopters + labels
 //   particles.ts   water, steam, sparks            overlays.ts links, domes, selection
 //   picking.ts     pointer -> tile / drone      clouds.ts   opening cloud cover
-import { Group, Vector3 } from "three";
+import { Color, Group, Vector3 } from "three";
 import { BeliefMap } from "../../sim/belief";
 import { BASE_ID } from "../../sim/comms";
 import { Fire } from "../../sim/environment";
@@ -47,6 +47,8 @@ export interface PickResult {
 }
 
 const FOG_LEVELS = 7;
+const BACKDROP = new Color(0x18222e); // the normal background around the map
+const CLOUD_BACKDROP = new Color(0xd9dee6); // behind the clouds, so any gap between them still reads as cloud
 const REGROW_STAGE_TICKS = 120; // regrown ground looks young for three stages of this length
 const FOG_TICKS = 300; // a tile this long unseen is as dark as it gets (same scale as the 2D view)
 
@@ -80,6 +82,7 @@ export class IsoRenderer {
   private readonly hover: HoverState = { tile: null, radius: 0 };
   private frameMs = 0;
   private cloudsWanted = false;
+  private mapHidden = false;
 
   constructor(container: HTMLElement, world: World) {
     this.stage = new IsoScene(container);
@@ -126,7 +129,7 @@ export class IsoRenderer {
     this.drones = new DroneLayer(world, this.terrain, this.particles, this.labelLayer, this.structures.padTopY);
     this.overlays = new OverlayLayer(world, this.terrain);
     this.clouds = new CloudLayer(this.terrain);
-    if (this.cloudsWanted) this.clouds.cover(); // a new run before the intro was started stays covered
+    this.mapHidden = false; // fresh layers start visible
 
     this.root = new Group();
     this.root.add(
@@ -151,6 +154,7 @@ export class IsoRenderer {
     this.stage.resize();
     this.stage.fitToMap(w, h, this.terrain.maxY);
     this.cam.frame(w, h, this.terrain.maxY, this.stage.aspect);
+    if (this.cloudsWanted) this.coverWithClouds(); // a new run before the intro was started stays covered
   }
 
   private clearWorld() {
@@ -177,7 +181,10 @@ export class IsoRenderer {
     this.lastTime = now;
     const world = this.world;
 
-    if (this.stage.resize()) this.cam.setAspect(this.stage.aspect, this.terrain.maxY);
+    if (this.stage.resize()) {
+      this.cam.setAspect(this.stage.aspect, this.terrain.maxY);
+      if (this.clouds.state === "covered") this.fitClouds(); // the view changed shape: keep the corners covered
+    }
     this.cam.update(dt);
     const { width, height } = this.stage.size;
 
@@ -200,11 +207,12 @@ export class IsoRenderer {
     this.terrain.update(now);
     this.structures.update(now);
     this.fire.update(now, world.tick, source ? source.severity : world.env.severity);
-    this.smoke.update(now, view.showSmoke && !source); // smoke is not part of a drone's fire map
+    this.smoke.update(now, view.showSmoke && !source && !this.mapHidden); // smoke is not part of a drone's fire map
     this.drones.update(alpha, now, dt, this.cam, width, height, view.selected);
     this.particles.update(dt);
     this.overlays.update(view, this.hover, now, this.cam.unitsPerPixel(height), this.nodePos);
     this.clouds.update(dt, now);
+    this.applyCloudCover();
 
     this.stage.gl.render(this.stage.scene, this.cam.camera);
     this.frameMs += (performance.now() - t0 - this.frameMs) * 0.1;
@@ -297,7 +305,30 @@ export class IsoRenderer {
   /** Hide the whole map under clouds (the opening screen). */
   coverWithClouds() {
     this.cloudsWanted = true;
+    this.cam.reset(); // the clouds are laid out for the home view
+    this.fitClouds();
     this.clouds.cover();
+    this.applyCloudCover();
+  }
+
+  /**
+   * While fully covered nothing under the clouds is drawn (it can't be seen, and it saves the
+   * GPU), and the background is cloud-coloured; as the clouds part, the map appears and the
+   * background fades back to normal.
+   */
+  private applyCloudCover() {
+    const covered = this.clouds.state === "covered";
+    if (covered !== this.mapHidden) {
+      // Only on a change: layers such as smoke manage their own visibility the rest of the time.
+      this.mapHidden = covered;
+      for (const child of this.root.children) if (child !== this.clouds.group) child.visible = !covered;
+    }
+    const k = this.clouds.progress;
+    (this.stage.scene.background as Color).copy(CLOUD_BACKDROP).lerp(BACKDROP, Math.min(1, k * 1.6));
+  }
+
+  private fitClouds() {
+    this.clouds.fit(this.cam.screenCornersAt(this.clouds.deckY));
   }
 
   /** Part the clouds over `seconds`, then call `done`. */

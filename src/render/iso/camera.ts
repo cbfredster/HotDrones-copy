@@ -135,6 +135,26 @@ export class IsoCamera {
     this.apply();
   }
 
+  /**
+   * Where the four corners of the screen (top-left, top-right, bottom-left, bottom-right)
+   * meet the horizontal plane at height y. Used to make the opening clouds fill the view.
+   */
+  screenCornersAt(y: number): Vector3[] {
+    const plane = new Plane(new Vector3(0, 1, 0), -y);
+    const ray = new Raycaster();
+    return [
+      [-1, 1],
+      [1, 1],
+      [-1, -1],
+      [1, -1],
+    ].map(([nx, ny]) => {
+      ray.setFromCamera(new Vector2(nx, ny), this.camera);
+      const out = new Vector3();
+      if (!ray.ray.intersectPlane(plane, out)) out.copy(this.target);
+      return out;
+    });
+  }
+
   /** World units covered by one screen pixel (orthographic, so it is the same everywhere). */
   unitsPerPixel(viewportHeightPx: number): number {
     return (this.camera.top - this.camera.bottom) / Math.max(1, viewportHeightPx);
