@@ -185,6 +185,13 @@ function setTool(t: Tool) {
   document.querySelectorAll<HTMLButtonElement>("#tools button").forEach((b) => b.classList.toggle("on", b.dataset.tool === t));
 }
 
+function toggleFog() {
+  iso.swarmFog = !iso.swarmFog;
+  $("fogToggle").textContent = iso.swarmFog ? "Fog on" : "Fog off";
+  $("fogToggle").classList.toggle("on", iso.swarmFog);
+}
+$("fogToggle").onclick = toggleFog;
+
 function toggleBelief() {
   view.beliefOf = view.beliefOf === null && view.selected !== null ? view.selected : null;
   $("beliefView").classList.toggle("on", view.beliefOf !== null);
@@ -265,6 +272,9 @@ window.addEventListener("keydown", (e) => {
       break;
     case "b":
       toggleBelief();
+      break;
+    case "f":
+      toggleFog();
       break;
     case "1":
       setTool("select");

@@ -140,7 +140,7 @@ export class TerrainLayer {
       if (young > 0) mixColor(c, c, REGROWTH, 0.7 * young);
       if (wet > 0) mixColor(c, c, WET_TINT, 0.5 * wet); // faint blue: a wetted firebreak
     }
-    c.multiplyScalar(1 - 0.78 * fog);
+    c.multiplyScalar(1 - 0.92 * fog);
     this.caps.setColorAt(i, c);
     this.caps.instanceColor!.needsUpdate = true;
   }
@@ -159,7 +159,7 @@ export class TerrainLayer {
       const wave = 0.5 + 0.5 * Math.sin(time * 1.7 + x * 0.55 + y * 0.35 + hash01(i, 14) * 6.283);
       const sparkle = wave * wave * wave; // mostly calm, occasional glint
       base.fromArray(this.base, i * 3);
-      mixColor(c, base, WATER_LIGHT, 0.55 * sparkle).multiplyScalar(1 - 0.78 * this.fog[i]);
+      mixColor(c, base, WATER_LIGHT, 0.55 * sparkle).multiplyScalar(1 - 0.92 * this.fog[i]);
       this.caps.setColorAt(i, c);
     }
     this.caps.instanceColor!.needsUpdate = true;

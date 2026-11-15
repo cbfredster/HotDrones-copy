@@ -152,7 +152,7 @@ export class TreeLayer {
   applyTile(i: number, vis: TileVis, fog: number, fuelLeft: number, young = 0) {
     const s0 = this.start[i];
     if (s0 < 0) return;
-    const dim = 1 - 0.78 * fog;
+    const dim = 1 - 0.92 * fog;
     const c = this.tmp;
     for (let k = 0; k < this.count[i]; k++) {
       const t = s0 + k;

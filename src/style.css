@@ -239,8 +239,8 @@ header button { padding: 3px 9px; font-size: 12px; align-self: center; }
 .intro small { display: block; margin-top: 10px; color: #c3c8d0; }
 .intro.leaving { opacity: 0; transform: translate(-50%, -60%); pointer-events: none; }
 /* While clouded, hide everything that would give the map away. */
-#stage .iso-labels, #stage .minimap, #stage .transport, #stage #viewBadge, #stage .hud.top-right { transition: opacity 0.8s ease; }
-#stage.clouded .iso-labels, #stage.clouded .minimap, #stage.clouded .transport, #stage.clouded #viewBadge, #stage.clouded .hud.top-right { opacity: 0; pointer-events: none; }
+#stage .iso-labels, #stage .minimap, #stage .transport, #stage .hud.top-left, #stage .hud.top-right { transition: opacity 0.8s ease; }
+#stage.clouded .iso-labels, #stage.clouded .minimap, #stage.clouded .transport, #stage.clouded .hud.top-left, #stage.clouded .hud.top-right { opacity: 0; pointer-events: none; }
 /* The clouds are laid out for the home view, so the view can't be moved until they have parted. */
 #stage.clouded .iso-canvas { pointer-events: none; }
 /* While the end-of-run summary is up, hide the drone labels and bars so they don't sit on top of it. */

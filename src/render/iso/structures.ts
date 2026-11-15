@@ -235,7 +235,7 @@ export class StructureLayer {
 
   private paintHouse(k: number, vis: TileVis, fog: number) {
     const burnt = vis !== TileVis.Unburnt;
-    const dim = 1 - 0.78 * fog;
+    const dim = 1 - 0.92 * fog;
     this.walls.setColorAt(k, this.tmp.copy(burnt ? WALL_CHARRED : WALL).multiplyScalar(dim));
     this.roofs.setColorAt(k, this.tmp.copy(burnt ? ROOF_CHARRED : this.roofColour[k]).multiplyScalar(dim));
     this.walls.instanceColor!.needsUpdate = true;

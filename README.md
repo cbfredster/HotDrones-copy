@@ -15,7 +15,7 @@ npm run typecheck
 npm run experiment:legacy-check   # proves the sim still reproduces the frozen 2D results exactly
 ```
 
-In the 3D view: drag to pan, wheel to zoom, **Q/E** rotate 90° (hills hide things), **R** resets the view,
+In the 3D view: drag to pan, wheel to zoom, **Q/E** rotate 90° (hills hide things), **R** resets the view, **F** (or the Fog button) shades ground the swarm has not looked at lately,
 **Space** plays/pauses, **.** steps one tick, **1–4** pick a judge tool, **B** shows the selected drone's own map.
 
 Open `results/report.html` after running the experiments for the charts.

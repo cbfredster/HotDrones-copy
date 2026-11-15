@@ -50,7 +50,7 @@ const FOG_LEVELS = 7;
 const BACKDROP = new Color(0x18222e); // the normal background around the map
 const CLOUD_BACKDROP = new Color(0xd9dee6); // behind the clouds, so any gap between them still reads as cloud
 const REGROW_STAGE_TICKS = 120; // regrown ground looks young for three stages of this length
-const FOG_TICKS = 300; // a tile this long unseen is as dark as it gets (same scale as the 2D view)
+const FOG_TICKS = 150; // a tile this long unseen is as dark as it gets (same scale as the 2D view)
 
 export class IsoRenderer {
   readonly cam = new IsoCamera();
@@ -174,6 +174,21 @@ export class IsoRenderer {
    * @param alpha how far we are between the previous sim tick and the current one (0..1);
    *              pass 1 when the sim is paused so the exact current state is shown.
    */
+  /** Shade the true map by how long since the swarm last looked at each tile (the Fog button). */
+  swarmFog = true;
+  private syncedFog = true;
+
+  /** Newest tick any drone or the base saw each tile. */
+  private swarmLastSeen(): Int32Array {
+    const world = this.world;
+    const seen = Int32Array.from(world.base.belief.lastSeen);
+    for (const d of world.drones) {
+      const ls = d.belief.lastSeen;
+      for (let i = 0; i < seen.length; i++) if (ls[i] > seen[i]) seen[i] = ls[i];
+    }
+    return seen;
+  }
+
   draw(view: IsoViewOptions, alpha: number) {
     const t0 = performance.now();
     const now = t0 / 1000;
@@ -191,11 +206,12 @@ export class IsoRenderer {
     // What the fire layers show: the truth, or one drone's belief about it.
     const viewer = view.beliefOf !== null ? world.drones[view.beliefOf] : undefined;
     const source = viewer ? viewer.belief : null;
-    if (world.tick !== this.syncedTick || source !== this.syncedSource) {
+    if (world.tick !== this.syncedTick || source !== this.syncedSource || this.swarmFog !== this.syncedFog) {
       this.syncTiles(source, now);
       this.smoke.sync();
       this.syncedTick = world.tick;
       this.syncedSource = source;
+      this.syncedFog = this.swarmFog;
     }
 
     if (this.pointer.dirty) {
@@ -237,6 +253,8 @@ export class IsoRenderer {
     const fireArr = source ? source.fire : env.fire;
     const n = this.keys.length;
     const tick = world.tick;
+    // Truth view with fog on: darken by how long since ANY drone (or the base) last looked.
+    const swarmSeen = !source && this.swarmFog ? this.swarmLastSeen() : null;
     for (let i = 0; i < n; i++) {
       const f = fireArr[i];
       let vis: TileVis;
@@ -261,8 +279,8 @@ export class IsoRenderer {
           if (regrown >= 0) youngQ = Math.max(0, 3 - Math.floor((tick - regrown) / REGROW_STAGE_TICKS));
         }
       }
-      if (source) {
-        const seen = source.lastSeen[i];
+      if (source || swarmSeen) {
+        const seen = source ? source.lastSeen[i] : swarmSeen![i];
         fogQ = seen < 0 ? FOG_LEVELS : Math.min(FOG_LEVELS, Math.floor(((tick - seen) / FOG_TICKS) * (FOG_LEVELS + 1)));
       }
       const key = vis | (wetQ << 2) | (fogQ << 5) | (fuelQ << 8) | (youngQ << 10);
