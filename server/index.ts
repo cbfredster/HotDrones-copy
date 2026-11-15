@@ -29,7 +29,7 @@ let store: ScenarioStore = new FileStore(join(DATA, "scenarios.json"), env.mongo
 
 Tiger.connect(env.tigerUrl).then((t) => {
   tiger = t;
-  if (t) console.log(`[tiger] ${t.status().detail}`);
+  if (t) console.log(`tigerdb - ${t.ready ? "connected: " : ""}${t.status().detail}`);
 });
 if (env.mongoUrl) {
   MongoStore.connect(env.mongoUrl, env.mongoDb)
