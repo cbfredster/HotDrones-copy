@@ -27,7 +27,11 @@ export class Tiger {
   static async connect(url: string | undefined): Promise<Tiger | null> {
     if (!url) return null;
     const needsSsl = !/localhost|127\.0\.0\.1|sslmode=disable/.test(url);
-    const pool = new pg.Pool({ connectionString: url, max: 4, connectionTimeoutMillis: 8000, ssl: needsSsl ? { rejectUnauthorized: false } : undefined });
+    // Strip SSL settings from the URL and pass them as an option instead. In the URL, pg treats
+    // sslmode=require as verify-full, which fails ("self-signed certificate in certificate chain")
+    // on networks that intercept TLS, such as university or venue Wi-Fi. The link is still encrypted.
+    const connectionString = needsSsl ? stripSslParams(url) : url;
+    const pool = new pg.Pool({ connectionString, max: 4, connectionTimeoutMillis: 8000, ssl: needsSsl ? { rejectUnauthorized: false } : undefined });
     pool.on("error", (e) => console.warn("[tiger] pool error:", e.message));
     const t = new Tiger(pool, pool);
     try {
@@ -236,5 +240,16 @@ export class Tiger {
 
   async close() {
     await this.pool?.end();
+  }
+}
+
+/** Remove sslmode / uselibpqcompat / sslrootcert etc. from a Postgres URL, keeping everything else. */
+export function stripSslParams(url: string): string {
+  try {
+    const u = new URL(url);
+    for (const k of [...u.searchParams.keys()]) if (/^ssl|^uselibpqcompat$/i.test(k)) u.searchParams.delete(k);
+    return u.toString();
+  } catch {
+    return url;
   }
 }
