@@ -106,7 +106,7 @@ export class Commander {
     // The label is computed here, not by the model: staleness must never be made up.
     const now = this.knowledge.snapshot(world);
     this.h.log({ tick: world.tick, who: "CMDR", kind: "base", text, stale: stalenessLabel(now), staleWarn: now.staleTicks > 0, src });
-    this.h.speak({ voice: "dispatcher", text, priority: 2 });
+    this.h.speak({ voice: "dispatcher", text, priority: 2, key: "sitrep" });
   }
 
   // ---------------------------------------------------------------- judge commands

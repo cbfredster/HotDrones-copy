@@ -17,7 +17,8 @@
     "start": "tsx server/index.ts",
     "audio:generate": "tsx scripts/audio-generate.ts",
     "db:migrate": "tsx scripts/db-migrate.ts",
-    "test:integrations": "tsx scripts/test-integrations.ts"
+    "test:integrations": "tsx scripts/test-integrations.ts",
+    "test:voice": "node --import tsx scripts/test-voice.ts"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.16",

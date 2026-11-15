@@ -54,10 +54,11 @@ class Api {
     }
   }
 
-  async post(path: string, body: unknown, timeoutMs = 15000): Promise<Response | null> {
+  async post(path: string, body: unknown, timeoutMs = 15000, signal?: AbortSignal): Promise<Response | null> {
     if (this.serverUp === false) return null;
     try {
-      const r = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs) });
+      const timeout = AbortSignal.timeout(timeoutMs);
+      const r = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
       return r.ok ? r : null;
     } catch {
       return null;

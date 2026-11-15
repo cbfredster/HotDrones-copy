@@ -1,116 +1,168 @@
-// Radio voices. One transmission at a time, played through a radio filter (band-pass, a
-// little grit, static and a squelch click at each end).
-//
-// Where a line's audio comes from, in order:
-//   1. a pre-generated clip in public/audio/radio (drone calls: made once by
-//      `npm run audio:generate`, committed, so they need no network at the demo);
-//   2. ElevenLabs text-to-speech through the server (Gemini's sitreps; cached on the server);
-//   3. the browser's own speech synthesis, if neither is available.
+// One radio channel, with cancellable loading/playback and explicit audio provenance.
 import { api } from "../api";
 import type { Ambience } from "./ambience";
 import type { AudioEngine } from "./engine";
+import type { Delivery, VoiceRole } from "./profiles";
 
 export interface Line {
-  voice: "dispatcher" | `drone:${number}`;
+  voice: VoiceRole;
   text: string;
-  /** Key of a pre-generated clip, e.g. "d3-lowBattery". */
   clip?: string;
-  /** Higher plays first. Sitreps and alerts outrank routine drone calls. */
   priority: number;
+  delivery?: Delivery;
+  /** A newer state replaces pending reports for the same topic. */
+  key?: string;
+}
+
+export type VoiceSource = "ElevenLabs clip" | "ElevenLabs live" | "Browser voice";
+export interface RadioState {
+  phase: "idle" | "preparing" | "speaking" | "listening";
+  line?: Line;
+  source?: VoiceSource;
 }
 
 interface Queued extends Line {
   queuedAt: number;
 }
 
-const MAX_WAIT_MS = 7000; // a routine call that has waited this long is old news: drop it
+interface Transmission {
+  line: Queued;
+  controller: AbortController;
+}
+
+/** Stop waiting immediately, even if decoding or a shared clip fetch cannot be cancelled. */
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T | null> {
+  if (signal.aborted) return Promise.resolve(null);
+  return new Promise((resolve, reject) => {
+    const abort = () => resolve(null);
+    signal.addEventListener("abort", abort, { once: true });
+    work.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
+}
 
 export class RadioVoice {
   private queue: Queued[] = [];
   private busy = false;
+  private listening = false;
+  private current: Transmission | null = null;
   private chain: AudioNode | null = null;
 
-  constructor(private eng: AudioEngine, private ambience: Ambience) {}
+  constructor(private eng: AudioEngine, private ambience: Ambience, private onState: (state: RadioState) => void = () => {}) {}
 
   say(line: Line) {
     if (!this.eng.on || !this.eng.busOn("voices")) return;
-    if (this.queue.length >= 4 && line.priority < 2) return; // never build a backlog of chatter
+    const same = (other: Line) => other.voice === line.voice && other.text === line.text;
+    if (this.queue.some(same) || (this.current && !this.current.controller.signal.aborted && same(this.current.line))) return;
+    if (line.key) this.queue = this.queue.filter((q) => q.key !== line.key);
+    if (line.priority >= 3) this.queue = this.queue.filter((q) => q.priority >= 2 && q.key !== "sitrep");
+    if (this.queue.length >= 4 && line.priority < 2) return;
     this.queue.push({ ...line, queuedAt: performance.now() });
     this.queue.sort((a, b) => b.priority - a.priority || a.queuedAt - b.queuedAt);
+    this.queue = this.queue.slice(0, 6);
+    const current = this.current;
+    if (current && ((line.priority >= 3 && line.priority > current.line.priority) || (line.key && line.key === current.line.key))) {
+      current.controller.abort();
+    }
     void this.pump();
   }
 
+  /** Reset/mute stops both an in-flight request and the currently audible transmission. */
   clear() {
     this.queue = [];
+    this.current?.controller.abort();
+    this.eng.setVoiceActive(false);
+    this.onState({ phase: this.listening ? "listening" : "idle" });
   }
 
-  /** source -> band-pass -> soft clipping -> voices bus. Built once. */
+  /** Keep our own audio out of push-to-talk recordings. */
+  setListening(on: boolean) {
+    this.listening = on;
+    if (on) this.current?.controller.abort();
+    this.eng.setListening(on);
+    this.onState({ phase: on ? "listening" : "idle" });
+    if (!on) void this.pump();
+  }
+
+  /** A gentle radio colour, preserving more consonants and character than telephone bandwidth. */
   private radioChain(): AudioNode {
     if (this.chain) return this.chain;
     const ctx = this.eng.ctx!;
     const hp = ctx.createBiquadFilter();
     hp.type = "highpass";
-    hp.frequency.value = 420;
+    hp.frequency.value = 180;
     const lp = ctx.createBiquadFilter();
     lp.type = "lowpass";
-    lp.frequency.value = 2900;
+    lp.frequency.value = 5800;
     const shaper = ctx.createWaveShaper();
     const curve = new Float32Array(257);
-    for (let i = 0; i < 257; i++) {
-      const x = (i - 128) / 128;
-      curve[i] = Math.tanh(2.6 * x);
-    }
+    for (let i = 0; i < curve.length; i++) curve[i] = Math.tanh(1.15 * (i - 128) / 128) / Math.tanh(1.15);
     shaper.curve = curve;
-    const out = ctx.createGain();
-    out.gain.value = 0.9;
-    hp.connect(lp).connect(shaper).connect(out).connect(this.eng.buses.voices);
+    hp.connect(lp).connect(shaper).connect(this.eng.buses.voices);
     this.chain = hp;
     return hp;
   }
 
+  private expired(line: Queued) {
+    return performance.now() - line.queuedAt > (line.priority >= 2 ? 20000 : 7000);
+  }
+
   private async pump() {
-    if (this.busy) return;
+    if (this.busy || this.listening) return;
     this.busy = true;
     try {
-      for (;;) {
+      while (!this.listening) {
         const line = this.queue.shift();
         if (!line) break;
-        if (line.priority < 2 && performance.now() - line.queuedAt > MAX_WAIT_MS) continue;
-        if (!this.eng.on || !this.eng.busOn("voices")) continue;
-        const buf = await this.fetchAudio(line);
-        if (buf) await this.playBuffer(buf);
-        else await this.speakWithBrowser(line);
+        if (this.expired(line) || !this.eng.on || !this.eng.busOn("voices")) continue;
+        const controller = new AbortController();
+        const { signal } = controller;
+        this.current = { line, controller };
+        this.onState({ phase: "preparing", line });
+        try {
+          const audio = await untilAborted(this.fetchAudio(line, signal), signal);
+          // A reset, mute or urgent interruption must never revive this line after loading.
+          if (signal.aborted || this.listening || this.expired(line) || !this.eng.on || !this.eng.busOn("voices")) continue;
+          this.eng.setVoiceActive(true);
+          this.onState({ phase: "speaking", line, source: audio?.source ?? "Browser voice" });
+          if (audio) await this.playBuffer(audio.buffer, signal);
+          else await this.speakWithBrowser(line, signal);
+        } catch {
+          // A broken audio device or decode must not wedge the radio channel.
+        } finally {
+          this.eng.setVoiceActive(false);
+          this.current = null;
+        }
       }
     } finally {
       this.busy = false;
+      this.onState({ phase: this.listening ? "listening" : "idle" });
     }
   }
 
-  private async fetchAudio(line: Line): Promise<AudioBuffer | null> {
+  private async fetchAudio(line: Line, signal: AbortSignal): Promise<{ buffer: AudioBuffer; source: VoiceSource } | null> {
     const file = line.clip ? this.eng.manifest.radio[line.clip] : undefined;
     if (file) {
-      const buf = await this.eng.load(file);
-      if (buf) return buf;
+      const buffer = await this.eng.load(file);
+      if (buffer) return { buffer, source: "ElevenLabs clip" };
     }
-    if (!api.on("elevenlabs")) return null;
-    const r = await api.post("/api/tts", { text: line.text, voice: line.voice }, 9000);
-    if (!r) return null;
+    if (signal.aborted || !api.on("elevenlabs")) return null;
+    const r = await api.post("/api/tts", { text: line.text, voice: line.voice, delivery: line.delivery ?? "calm" }, 9000, signal);
+    if (!r || signal.aborted) return null;
     try {
-      return await this.eng.decode(await r.arrayBuffer());
+      const buffer = await this.eng.decode(await r.arrayBuffer());
+      return buffer ? { buffer, source: "ElevenLabs live" } : null;
     } catch {
       return null;
     }
   }
 
-  private playBuffer(buf: AudioBuffer): Promise<void> {
+  private playBuffer(buf: AudioBuffer, signal: AbortSignal): Promise<void> {
     return new Promise((resolve) => {
+      if (signal.aborted) return resolve();
       const ctx = this.eng.ctx!;
-      const t = ctx.currentTime + 0.1;
-      this.ambience.squelch(this.eng.buses.voices, t - 0.09);
       const src = ctx.createBufferSource();
       src.buffer = buf;
       src.connect(this.radioChain());
-      // Static under the voice.
       const hiss = ctx.createBufferSource();
       hiss.buffer = this.eng.noise;
       hiss.loop = true;
@@ -118,35 +170,63 @@ export class RadioVoice {
       hf.type = "bandpass";
       hf.frequency.value = 1800;
       const hg = ctx.createGain();
-      hg.gain.value = 0.025;
+      hg.gain.value = 0.008;
       hiss.connect(hf).connect(hg).connect(this.eng.buses.voices);
+      let finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        signal.removeEventListener("abort", finish);
+        src.onended = null;
+        try { src.stop(); } catch { /* already stopped */ }
+        try { hiss.stop(); } catch { /* already stopped */ }
+        src.disconnect();
+        hiss.disconnect();
+        hf.disconnect();
+        hg.disconnect();
+        if (!signal.aborted) this.ambience.squelch();
+        resolve();
+      };
+      const timer = setTimeout(finish, (buf.duration + 1) * 1000);
+      signal.addEventListener("abort", finish, { once: true });
+      src.onended = finish;
+      this.ambience.squelch();
+      const t = ctx.currentTime + 0.09;
       src.start(t);
       hiss.start(t);
       hiss.stop(t + buf.duration);
-      this.ambience.squelch(this.eng.buses.voices, t + buf.duration);
-      src.onended = () => setTimeout(resolve, 220);
-      setTimeout(resolve, (buf.duration + 1.5) * 1000); // in case onended never fires
     });
   }
 
-  /** Last resort: the browser's built-in voice (no radio filter is possible on it). */
-  private speakWithBrowser(line: Line): Promise<void> {
+  /** An explicitly labelled fallback; cancellable just like generated audio. */
+  private speakWithBrowser(line: Line, signal: AbortSignal): Promise<void> {
     return new Promise((resolve) => {
-      if (!("speechSynthesis" in window)) return resolve();
-      this.ambience.squelch();
+      if (signal.aborted || !("speechSynthesis" in window)) return resolve();
+      const synth = window.speechSynthesis;
       const u = new SpeechSynthesisUtterance(line.text);
       const n = /^drone:(\d+)$/.exec(line.voice);
-      u.rate = 1.15;
-      u.pitch = n ? 0.7 + (Number(n[1]) % 5) * 0.2 : 0.9;
-      u.volume = 0.9;
-      const done = () => {
-        this.ambience.squelch();
+      const voices = synth.getVoices().filter((v) => v.lang.startsWith("en"));
+      u.voice = voices.length ? voices[n ? (Number(n[1]) + 1) % voices.length : 0] : null;
+      u.rate = line.delivery === "urgent" ? 1.12 : 1.02;
+      u.pitch = n ? 0.9 + (Number(n[1]) % 3) * 0.12 : 1;
+      u.volume = this.eng.voiceVolume;
+      let finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        signal.removeEventListener("abort", finish);
+        u.onend = u.onerror = null;
+        synth.cancel();
+        if (!signal.aborted) this.ambience.squelch();
         resolve();
       };
-      u.onend = done;
-      u.onerror = () => resolve();
-      setTimeout(resolve, 12000);
-      speechSynthesis.speak(u);
+      const timer = setTimeout(finish, 20000);
+      signal.addEventListener("abort", finish, { once: true });
+      u.onend = u.onerror = finish;
+      this.ambience.squelch();
+      synth.speak(u);
     });
   }
 }

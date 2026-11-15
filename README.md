@@ -51,6 +51,34 @@ npm run dev
 Press **Sound** in the header to hear the swarm: drones that can reach each other play in time, and a group
 that is cut off drifts out of time until it reconnects.
 
+Press **Radio check** in the Sound panel to audition the dispatcher and three drone voices without
+changing the simulation. Live captions identify the speaker and whether the sound is an ElevenLabs
+clip, live ElevenLabs speech, or the browser fallback. Emergency calls interrupt routine chatter;
+music and effects lower automatically while someone speaks. Incident audio includes local drone
+reports, including isolated drones; those reports do not update the base commander's knowledge.
+
+With blank voice IDs, the server selects a stable cast from the account's included English voices
+(Alice, Charlie, Jessica and George when available), independent of the order returned by the API.
+Set `ELEVENLABS_DISPATCHER_VOICE` and comma-separated `ELEVENLABS_DRONE_VOICES` to cast it yourself.
+For a paid account, Alicia (`BFd5oBc2DDna33pSi4Gf`), Baxter (`jSuBIjxMKhqIfb0wCK1F`),
+Jade (`g7LVvkPWALzPxOQbF6OE`) and Eldrin (`6WwXjDDEMyNmFG95zycZ`) are alternatives from
+[ElevenLabs' replacement voice list](https://elevenlabs.io/docs/help-center/product/voices/my-voices/what-are-default-voices).
+The older default voices expire on December 31, 2026; automatic selection adapts to the included
+voices returned by the account. Explicit choices always take precedence.
+
+```bash
+npm run audio:generate -- --only radio  # fixed calls + radio check, for ten drones
+npm run test:voice                     # cache, interruptions, resets and mixer regressions; no key needed
+```
+
+Generate the radio clips before judging and include `public/audio/` in the deployment. Clips use
+fingerprinted filenames: changing the cast, text, model or delivery regenerates the affected files
+and refreshes browser caches. Matching files are reused. `--drones 16` covers larger swarms.
+The default `ELEVENLABS_TTS_MODEL=eleven_flash_v2_5` favours responsive speech; urgent/relieved calls
+adjust pacing and stability. If you select `eleven_v3` or a v4 model, those calls also use audio tags.
+Hold **Mic** (or hold Space/Enter with the button focused) to speak; release to send. App audio is
+muted during recording, recordings stop after ten seconds, and proposed actions need confirmation.
+
 ```bash
 npm run experiment -- 30 --workers 8   # same results, on 8 threads
 npm run experiment -- 30 --db          # also stream the runs into Tiger Data

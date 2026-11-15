@@ -19,6 +19,12 @@ export class AudioEngine {
   private buffers = new Map<string, Promise<AudioBuffer | null>>();
   private volume = 0.7;
   private enabled = { voices: true, effects: true, swarm: true, score: true };
+  private voiceActive = false;
+  private listening = false;
+
+  get voiceVolume() {
+    return this.volume;
+  }
 
   get on() {
     return this.ctx !== null && this.ctx.state === "running";
@@ -48,7 +54,7 @@ export class AudioEngine {
       const data = this.noise.getChannelData(0);
       for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1; // cosmetic only: not the sim's RNG
       try {
-        const r = await fetch("/audio/manifest.json");
+        const r = await fetch("/audio/manifest.json", { signal: AbortSignal.timeout(3000) });
         if (r.ok && (r.headers.get("content-type") ?? "").includes("json")) this.manifest = { ...EMPTY, ...(await r.json()) };
       } catch {
         /* no generated audio: everything is synthesised */
@@ -68,9 +74,28 @@ export class AudioEngine {
 
   setBus(name: keyof AudioEngine["buses"], on: boolean) {
     this.enabled[name] = on;
-    if (!this.ctx) return;
-    const level = { voices: 1, effects: 0.8, swarm: 0.55, score: 0.5 }[name];
-    this.buses[name].gain.setTargetAtTime(on ? level : 0, this.ctx.currentTime, 0.08);
+    this.mix();
+  }
+
+  setVoiceActive(on: boolean) {
+    this.voiceActive = on;
+    this.mix();
+  }
+
+  setListening(on: boolean) {
+    this.listening = on;
+    this.mix();
+  }
+
+  private mix() {
+    if (!this.ctx || !this.buses) return;
+    const levels = { voices: 1, effects: 0.8, swarm: 0.55, score: 0.5 };
+    const duck = { voices: 1, effects: 0.3, swarm: 0.12, score: 0.18 };
+    for (const name of Object.keys(levels) as (keyof typeof levels)[]) {
+      const gain = this.buses[name].gain;
+      const target = this.enabled[name] && !this.listening ? levels[name] * (this.voiceActive ? duck[name] : 1) : 0;
+      gain.setTargetAtTime(target, this.ctx.currentTime, this.voiceActive || this.listening ? 0.04 : 0.25);
+    }
   }
   busOn(name: keyof AudioEngine["buses"]) {
     return this.enabled[name];
@@ -82,7 +107,7 @@ export class AudioEngine {
     if (!p) {
       p = (async () => {
         try {
-          const r = await fetch("/audio/" + path);
+          const r = await fetch("/audio/" + path, { signal: AbortSignal.timeout(5000) });
           if (!r.ok) return null;
           return await this.ctx!.decodeAudioData(await r.arrayBuffer());
         } catch {

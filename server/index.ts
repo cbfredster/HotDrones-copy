@@ -12,6 +12,7 @@ import type { BaseSnapshot } from "../src/integrations/baseKnowledge";
 import type { RunInfo, RunResult, SimEvent, TelemetrySample } from "../src/integrations/events";
 import { MODES, digestEvents, hurtScore, runScenarioAsync, sanitizeActions, sanitizeConfig } from "./challenge";
 import { Eleven } from "./eleven";
+import { isDelivery, isVoiceRole } from "../src/integrations/audio/profiles";
 import { env } from "./env";
 import { Gemini } from "./gemini";
 import { FileStore, MongoStore, newScenarioId, type Outcome, type Scenario, type ScenarioStore } from "./store";
@@ -297,8 +298,13 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL) {
   // ---- voice (ElevenLabs)
   if (p === "/api/tts" && m === "POST") {
     const b = await readJson(req, 20_000);
+    const voice = b.voice ?? "dispatcher";
+    const delivery = b.delivery ?? "calm";
+    if (typeof b.text !== "string" || !b.text.trim() || !isVoiceRole(voice) || !isDelivery(delivery)) {
+      return json(res, 400, { error: "Supply text, a dispatcher or drone:N voice, and calm, urgent or relieved delivery" });
+    }
     try {
-      const audio = await eleven.speak(String(b.text ?? ""), String(b.voice ?? "dispatcher"));
+      const audio = await eleven.speak(b.text, voice, delivery);
       res.writeHead(200, { "content-type": "audio/mpeg", "cache-control": "no-store" });
       return res.end(audio);
     } catch (e: any) {

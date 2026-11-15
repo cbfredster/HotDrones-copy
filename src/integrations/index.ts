@@ -15,7 +15,8 @@ import { api } from "./api";
 import { Ambience, type Threat } from "./audio/ambience";
 import { AudioEngine } from "./audio/engine";
 import { SwarmMusic } from "./audio/swarm";
-import { RadioVoice } from "./audio/voice";
+import { RadioVoice, type RadioState } from "./audio/voice";
+import { RADIO_CHECK } from "./lines";
 import { Commander } from "./commander";
 import { EventDeriver, sampleTelemetry, type RunInfo, type RunResult, type SimEvent, type TelemetrySample } from "./events";
 import { RadioLog } from "./radio";
@@ -35,7 +36,7 @@ export class Integrations {
   private deriver = new EventDeriver();
   private audio = new AudioEngine();
   private ambience = new Ambience(this.audio);
-  private voice = new RadioVoice(this.audio, this.ambience);
+  private voice = new RadioVoice(this.audio, this.ambience, (state) => this.drawRadio(state));
   private swarm = new SwarmMusic(this.audio);
   private radio: RadioLog;
   private commander: Commander;
@@ -47,6 +48,8 @@ export class Integrations {
   private finishedSent = false;
   private threatened = false;
   private soundOn = false;
+  private soundRequest = 0;
+  private cancelMic = () => {};
 
   constructor(private hooks: Hooks) {
     this.radio = new RadioLog($("radioLog"), (l) => this.voice.say(l));
@@ -77,6 +80,7 @@ export class Integrations {
 
   // ---------------------------------------------------------------- hooks from main.ts
   onRun(world: World) {
+    this.cancelMic();
     this.flush(); // whatever is left of the previous run
     this.run = {
       runId: crypto.randomUUID(),
@@ -158,26 +162,51 @@ export class Integrations {
   }
 
   // ---------------------------------------------------------------- UI
+  private drawRadio(state: RadioState) {
+    $("radioNow").dataset.phase = state.phase;
+    const n = state.line ? /^drone:(\d+)$/.exec(state.line.voice) : null;
+    $("radioSpeaker").textContent = state.phase === "listening" ? "Listening to you" : state.line ? n ? `Drone ${n[1]}` : "Dispatcher" : "Channel ready";
+    $("radioSource").textContent = state.source ?? (state.phase === "preparing" ? "Preparing audio…" : "");
+    $("radioCaption").textContent = state.phase === "listening"
+      ? "Release Mic to send your command."
+      : state.line?.text ?? (this.soundOn ? "Standing by for incident reports." : "Enable sound or run a radio check to hear the crew.");
+  }
+
   private wireUi() {
     const toggle = $("soundToggle");
     const setSound = async (on: boolean) => {
+      const request = ++this.soundRequest;
       this.soundOn = on;
       if (on) {
-        await this.audio.unlock();
-        await this.ambience.start();
-        this.swarm.start();
-        this.swarm.setWorld(this.hooks.getWorld());
-        $("soundHint").textContent = this.ambience.hasScore
-          ? "Each drone is a note; a group that loses contact drifts out of time until it reconnects."
-          : "Each drone is a note; a group that loses contact drifts out of time until it reconnects. (No generated score in public/audio yet, so effects are synthesised.)";
+        try {
+          await this.audio.unlock();
+          if (!this.audio.on) throw new Error("audio context did not resume");
+          if (request !== this.soundRequest) {
+            if (!this.soundOn) this.audio.suspend();
+            return;
+          }
+          await this.ambience.start();
+        } catch {
+          if (request !== this.soundRequest) return;
+          this.soundOn = false;
+          on = false;
+          this.audio.suspend();
+          $("soundHint").textContent = "Audio could not start. Press Sound to retry.";
+        }
+        if (request !== this.soundRequest) return;
+        if (on) {
+          this.swarm.start();
+          this.swarm.setWorld(this.hooks.getWorld());
+          $("soundHint").textContent = "Radio voices lower the background automatically. Each drone is a note; isolated groups drift out of time until they reconnect.";
+        }
       } else {
         this.audio.suspend();
-        if ("speechSynthesis" in window) speechSynthesis.cancel();
         this.voice.clear();
         $("soundHint").innerHTML = "Sound is off. Press <kbd>M</kbd> or the button in the header.";
       }
       toggle.textContent = on ? "Sound on" : "Sound off";
       toggle.classList.toggle("on", on);
+      toggle.setAttribute("aria-pressed", String(on));
     };
     toggle.onclick = () => void setSound(!this.soundOn);
     window.addEventListener("keydown", (e) => {
@@ -189,11 +218,24 @@ export class Integrations {
         this.audio.setBus(bus, input(id).checked);
         if (bus === "voices" && !input(id).checked) {
           this.voice.clear();
-          if ("speechSynthesis" in window) speechSynthesis.cancel();
         }
       };
     }
     input("sndVolume").oninput = () => this.audio.setVolume(Number(input("sndVolume").value) / 100);
+    const check = $<HTMLButtonElement>("radioCheck");
+    check.onclick = async () => {
+      check.disabled = true;
+      try {
+        await setSound(true);
+        if (!this.soundOn) return;
+        input("sndVoices").checked = true;
+        this.audio.setBus("voices", true);
+        this.voice.clear();
+        for (const line of RADIO_CHECK) this.voice.say(line);
+      } finally {
+        check.disabled = false;
+      }
+    };
 
     // Commander: typed commands...
     $<HTMLFormElement>("commandForm").onsubmit = (e) => {
@@ -207,76 +249,158 @@ export class Integrations {
     this.wireMic($<HTMLButtonElement>("micButton"));
   }
 
-  /** Hold the Mic button to talk. ElevenLabs speech-to-text if connected, else the browser's recogniser. */
+  /** Push-to-talk with pointer capture, keyboard support and bounded recordings. */
   private wireMic(btn: HTMLButtonElement) {
     const SR: any = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
     let recorder: MediaRecorder | null = null;
     let recognition: any = null;
-    const heard = (text: string) => {
-      if (text.trim()) void this.commander.command(text.trim());
-    };
-    const note = (text: string) => this.radio.add({ tick: this.hooks.getWorld().tick, who: "SYS", kind: "sys", text });
-
     let held = false;
-    const start = async () => {
-      if (recorder || recognition) return;
-      held = true;
-      btn.classList.add("rec");
-      if (api.on("elevenlabs") && navigator.mediaDevices?.getUserMedia) {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          const chunks: Blob[] = [];
-          const rec = new MediaRecorder(stream);
-          recorder = rec;
-          rec.ondataavailable = (e) => chunks.push(e.data);
-          rec.onstop = async () => {
-            stream.getTracks().forEach((t) => t.stop());
-            const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
-            if (blob.size < 1500) return;
-            try {
-              const r = await fetch("/api/stt", { method: "POST", headers: { "content-type": blob.type }, body: blob, signal: AbortSignal.timeout(20000) });
-              if (r.ok) heard((await r.json()).text ?? "");
-              else note("Could not transcribe that.");
-            } catch {
-              note("Could not transcribe that.");
-            }
-          };
-          rec.start();
-          if (!held) stop(); // released before the microphone was ready
-          return;
-        } catch {
-          recorder = null;
-          note("Microphone not available.");
-        }
-      } else if (SR) {
-        try {
-          recognition = new SR();
-          recognition.lang = "en-GB";
-          recognition.onresult = (e: any) => heard(e.results[0][0].transcript);
-          recognition.onend = () => {
-            recognition = null;
-            btn.classList.remove("rec");
-          };
-          recognition.onerror = () => note("Could not hear that.");
-          recognition.start();
-          return;
-        } catch {
-          recognition = null;
-        }
-      } else note("Voice commands need ElevenLabs connected, or a browser with speech recognition. Type the command instead.");
+    let opening = false;
+    let transcribing = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let request: AbortController | null = null;
+    let session = 0;
+    const status = $("micStatus");
+    const release = () => {
+      held = false;
+      clearTimeout(timer);
+      this.voice.setListening(false);
       btn.classList.remove("rec");
+      btn.setAttribute("aria-pressed", "false");
+      btn.textContent = "Mic";
+    };
+    const heard = (text: string, token: number) => {
+      if (token !== session) return;
+      if (text.trim()) {
+        status.textContent = `Heard: “${text.trim()}”`;
+        void this.commander.command(text.trim());
+      } else status.textContent = "No speech heard. Hold Mic and try again, or type your command.";
     };
     const stop = () => {
       held = false;
-      btn.classList.remove("rec");
-      if (recorder) {
-        if (recorder.state !== "inactive") recorder.stop();
-        recorder = null;
-      }
+      if (recorder?.state === "recording") recorder.stop();
       recognition?.stop();
+      release();
     };
-    btn.addEventListener("pointerdown", () => void start());
+    this.cancelMic = () => {
+      session++;
+      request?.abort();
+      stop();
+      status.textContent = "Hold Mic to speak; release to send. Proposed actions still need confirmation.";
+    };
+    const start = async () => {
+      if (held || opening || recorder || recognition || transcribing) return;
+      const token = ++session;
+      held = true;
+      opening = true;
+      this.voice.setListening(true);
+      btn.classList.add("rec");
+      btn.setAttribute("aria-pressed", "true");
+      btn.textContent = "Listening";
+      status.textContent = "Opening microphone…";
+      try {
+        if (api.on("elevenlabs") && navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== "undefined") {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+          if (!held || token !== session) {
+            stream.getTracks().forEach((track) => track.stop());
+            return;
+          }
+          const chunks: Blob[] = [];
+          let rec: MediaRecorder;
+          try {
+            rec = new MediaRecorder(stream);
+          } catch (e) {
+            stream.getTracks().forEach((track) => track.stop());
+            throw e;
+          }
+          recorder = rec;
+          rec.ondataavailable = (e) => chunks.push(e.data);
+          rec.onstop = async () => {
+            stream.getTracks().forEach((track) => track.stop());
+            if (recorder === rec) {
+              recorder = null;
+              release();
+            }
+            if (token !== session) return;
+            const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
+            if (blob.size < 1500) {
+              status.textContent = "Recording too short. Hold Mic while you speak.";
+              return;
+            }
+            transcribing = true;
+            btn.disabled = true;
+            status.textContent = "Transcribing with ElevenLabs…";
+            const controller = new AbortController();
+            request = controller;
+            try {
+              const r = await fetch("/api/stt", {
+                method: "POST", headers: { "content-type": blob.type }, body: blob,
+                signal: AbortSignal.any([controller.signal, AbortSignal.timeout(20000)]),
+              });
+              if (!r.ok) throw new Error("transcription failed");
+              heard((await r.json()).text ?? "", token);
+            } catch {
+              if (token === session) status.textContent = "Could not transcribe that. Try again or type your command.";
+            } finally {
+              request = null;
+              transcribing = false;
+              btn.disabled = false;
+            }
+          };
+          rec.onerror = () => {
+            status.textContent = "Microphone recording failed. Try again or type your command.";
+            // Discard a failed recording rather than send partial audio as a command.
+            session++;
+            stop();
+            stream.getTracks().forEach((track) => track.stop());
+            recorder = null;
+          };
+          try {
+            rec.start();
+          } catch (e) {
+            stream.getTracks().forEach((track) => track.stop());
+            throw e;
+          }
+          status.textContent = "Listening with ElevenLabs. Release to send (10 second limit).";
+        } else if (SR) {
+          const rec = new SR();
+          recognition = rec;
+          rec.lang = "en-GB";
+          rec.onresult = (e: any) => heard(e.results[0][0].transcript, token);
+          rec.onend = () => { recognition = null; release(); };
+          rec.onerror = () => { status.textContent = "Could not hear that. Try again or type your command."; };
+          rec.start();
+          status.textContent = "Listening with browser recognition. Release to send.";
+        } else status.textContent = "Voice input is unavailable. Type your command below the radio log.";
+        if (recorder || recognition) timer = setTimeout(stop, 10000);
+      } catch {
+        recognition = null;
+        recorder = null;
+        status.textContent = "Microphone unavailable. Check browser permissions or type your command.";
+      } finally {
+        opening = false;
+        if (!recorder && !recognition) release();
+      }
+    };
+    btn.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      btn.setPointerCapture(e.pointerId);
+      void start();
+    });
     btn.addEventListener("pointerup", stop);
-    btn.addEventListener("pointerleave", stop);
+    btn.addEventListener("pointercancel", stop);
+    btn.addEventListener("lostpointercapture", stop);
+    btn.addEventListener("keydown", (e) => {
+      if (e.code !== "Space" && e.code !== "Enter") return;
+      e.preventDefault();
+      if (!e.repeat) void start();
+    });
+    btn.addEventListener("keyup", (e) => {
+      if (e.code !== "Space" && e.code !== "Enter") return;
+      e.preventDefault();
+      stop();
+    });
+    btn.addEventListener("blur", stop);
+    window.addEventListener("blur", stop);
   }
 }

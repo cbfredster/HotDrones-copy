@@ -118,13 +118,18 @@
 
       <section>
         <h2>Radio <span id="commanderTag" class="tag"></span></h2>
+        <div id="radioNow" class="radio-now" data-phase="idle" role="status" aria-live="polite" aria-atomic="true">
+          <div><strong id="radioSpeaker">Channel ready</strong><span id="radioSource" class="tag"></span></div>
+          <p id="radioCaption">Enable sound or run a radio check to hear the crew.</p>
+        </div>
         <div id="radioLog" class="radio-log" aria-live="polite"></div>
         <div id="chips" class="chips"></div>
         <form id="commandForm" class="row command">
           <input id="commandText" type="text" autocomplete="off" placeholder="Tell the commander: “cut base comms”, “start a fire near the village”…" />
-          <button id="micButton" type="button" title="Hold to talk">Mic</button>
+          <button id="micButton" type="button" title="Hold to talk. With keyboard focus, hold Space or Enter." aria-label="Hold to talk to the commander" aria-pressed="false">Mic</button>
           <button type="submit">Send</button>
         </form>
+        <p id="micStatus" class="hint" role="status">Hold Mic to speak; release to send. Proposed actions still need confirmation.</p>
         <p class="hint">The commander sits at the base and only knows what the base knows. It proposes judge actions for you to confirm; it never steers the drones.</p>
       </section>
 
@@ -137,7 +142,9 @@
           <label class="check" title="Music stems from public/audio (made by npm run audio:generate), crossfaded by threat level"><input type="checkbox" id="sndStems" checked /> Score</label>
         </div>
         <div class="row"><label>Volume</label><input id="sndVolume" type="range" min="0" max="100" value="70" /></div>
+        <div class="row"><button id="radioCheck" type="button">Radio check</button><span class="hint">Hear the dispatcher and three drone voices.</span></div>
         <p class="hint" id="soundHint">Sound is off. Press <kbd>M</kbd> or the button in the header.</p>
+        <p class="hint">Incident audio includes local reports from isolated drones. The commander still only knows what reaches base.</p>
       </section>
 
       <section>

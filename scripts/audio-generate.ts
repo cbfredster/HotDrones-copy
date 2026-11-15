@@ -8,11 +8,12 @@
 // Usage: npm run audio:generate -- [--only sfx|music|radio] [--drones 10] [--force]
 // Needs ELEVENLABS_API_KEY in .env. Existing files are kept unless --force is given, so it
 // is safe to re-run after a failure or to add more drones.
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Eleven } from "../server/eleven";
 import { env } from "../server/env";
-import { ALERTS, DRONE_CALLS, alertClip, droneClip, droneLine, type Alert } from "../src/integrations/lines";
+import { ALERTS, ALERT_DELIVERY, DRONE_CALLS, RADIO_CHECK, alertClip, droneClip, droneDelivery, droneLine, type Alert } from "../src/integrations/lines";
+import type { Delivery, VoiceRole } from "../src/integrations/audio/profiles";
 
 const args = process.argv.slice(2);
 const option = (name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
@@ -20,6 +21,13 @@ const ONLY = option("--only");
 const DRONES = Math.max(1, Math.min(16, Number(option("--drones")) || 10));
 const FORCE = args.includes("--force");
 const OUT = "public/audio";
+const radio: Record<string, string> = {};
+try {
+  const previous = JSON.parse(readFileSync(join(OUT, "manifest.json"), "utf8"));
+  for (const [key, path] of Object.entries(previous.radio ?? {})) {
+    if (typeof path === "string" && existsSync(join(OUT, path))) radio[key] = path;
+  }
+} catch { /* first generation */ }
 
 const SFX: Record<string, { prompt: string; seconds: number; loop: boolean }> = {
   rotor: { prompt: "Steady buzzing hum of several small quadcopter drones hovering, continuous, no voices", seconds: 8, loop: true },
@@ -62,6 +70,14 @@ async function make(path: string, generate: () => Promise<Buffer>) {
   }
 }
 
+async function makeRadio(key: string, text: string, voice: VoiceRole, delivery: Delivery) {
+  // Fingerprinted filenames refresh the browser cache and never silently reuse an old cast.
+  const path = `radio/${key}-${await eleven.speechKey(text, voice, delivery)}.mp3`;
+  delete radio[key];
+  await make(path, () => eleven.speak(text, voice, delivery));
+  if (existsSync(join(OUT, path))) radio[key] = path;
+}
+
 if (!ONLY || ONLY === "sfx") {
   console.log("Sound effects");
   for (const [name, s] of Object.entries(SFX)) await make(`sfx/${name}.mp3`, () => eleven.soundEffect(s.prompt, s.seconds, s.loop));
@@ -75,9 +91,10 @@ if (!ONLY || ONLY === "radio") {
   const voices = await eleven.voiceIds();
   console.log(`  dispatcher voice ${voices.dispatcher}; drone voices ${voices.drones.join(", ")}`);
   for (let id = 0; id < DRONES; id++) {
-    for (const call of DRONE_CALLS) await make(`radio/${droneClip(id, call)}.mp3`, () => eleven.speak(droneLine(id, call), `drone:${id}`));
+    for (const call of DRONE_CALLS) await makeRadio(droneClip(id, call), droneLine(id, call), `drone:${id}`, droneDelivery(call));
   }
-  for (const a of Object.keys(ALERTS) as Alert[]) await make(`radio/${alertClip(a)}.mp3`, () => eleven.speak(ALERTS[a], "dispatcher"));
+  for (const a of Object.keys(ALERTS) as Alert[]) await makeRadio(alertClip(a), ALERTS[a], "dispatcher", ALERT_DELIVERY[a]);
+  for (const line of RADIO_CHECK) await makeRadio(line.clip, line.text, line.voice, line.delivery);
 }
 
 // The manifest lists what is actually on disk, so a partial run is still usable.
@@ -88,7 +105,7 @@ const list = (dir: string) =>
       .sort()
       .map((f) => [f.replace(/\.mp3$/, ""), `${dir}/${f}`]),
   );
-writeFileSync(join(OUT, "manifest.json"), JSON.stringify({ sfx: list("sfx"), music: list("music"), radio: list("radio") }, null, 1) + "\n");
+writeFileSync(join(OUT, "manifest.json"), JSON.stringify({ sfx: list("sfx"), music: list("music"), radio }, null, 1) + "\n");
 console.log(`\n${made} file(s) generated, ${failed} failed. Wrote ${OUT}/manifest.json.`);
 console.log("Commit public/audio so the demo plays without a network:  git add public/audio && git commit -m \"Generated audio\"");
 process.exit(failed ? 1 : 0);

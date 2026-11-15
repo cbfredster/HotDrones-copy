@@ -210,6 +210,15 @@ header button { padding: 3px 9px; font-size: 12px; align-self: center; }
 .radio-log .good .who { color: var(--good); }
 .radio-log .stale { color: var(--accent); font-weight: 700; }
 .radio-log .src { color: #6f7680; }
+.radio-now { margin-bottom: 8px; padding: 9px 10px; border: 1px solid var(--line); border-left: 3px solid #4a505a; border-radius: 6px; background: #15181d; }
+.radio-now > div { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.radio-now strong { font-size: 12px; color: var(--dim); }
+.radio-now p { margin: 5px 0 0; font-size: 13px; line-height: 1.4; }
+.radio-now[data-phase="speaking"] { border-left-color: var(--good); }
+.radio-now[data-phase="speaking"] strong { color: var(--good); }
+.radio-now[data-phase="preparing"] { border-left-color: var(--accent); }
+.radio-now[data-phase="listening"] { border-left-color: var(--bad); }
+.radio-now .tag:empty { display: none; }
 .chips { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
 .chip { display: flex; align-items: center; gap: 6px; background: #262b33; border: 1px solid var(--accent); border-radius: 6px; padding: 4px 6px 4px 10px; font-size: 13px; }
 .chip span { flex: 1; }
@@ -217,6 +226,7 @@ header button { padding: 3px 9px; font-size: 12px; align-self: center; }
 .command input { flex: 1; min-width: 0; }
 .command button { padding: 5px 8px; }
 #micButton.rec { background: var(--bad); border-color: var(--bad); color: #fff; }
+#micButton { touch-action: none; user-select: none; }
 .report { background: #15181d; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin: 0 0 12px; font-size: 13px; line-height: 1.5; max-height: 150px; overflow-y: auto; text-align: left; }
 .report b { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); margin-bottom: 3px; }
 .share { font-size: 12px; color: var(--dim); margin-top: 6px; overflow-wrap: anywhere; }

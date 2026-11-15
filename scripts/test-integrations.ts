@@ -50,10 +50,11 @@ try {
   if (db) check("database connected and migrated", status.tiger.on, status.tiger.detail);
 
   // ---- 1. a headless run through the event stream, with judge actions
-  const world = new World({ seed: 15 });
+  // Seed 7 keeps the fire active through the outage, crash and restoration below.
+  const world = new World({ seed: 7 });
   const deriver = new EventDeriver();
   const knowledge = new BaseKnowledge();
-  const run: RunInfo = { runId: randomUUID(), startedAt: Date.now(), source: "live", seed: 15, mode: "swarm", commsRange: world.cfg.commsRange, drones: world.drones.length };
+  const run: RunInfo = { runId: randomUUID(), startedAt: Date.now(), source: "live", seed: world.cfg.seed, mode: "swarm", commsRange: world.cfg.commsRange, drones: world.drones.length };
   const all: SimEvent[] = [];
   let samples: TelemetrySample[] = [];
   let events: SimEvent[] = [];
@@ -115,6 +116,8 @@ try {
   check("commander endpoint reports 'not configured' without a key", cmd.status === 503);
   const tts = await post("/api/tts", { text: "Base to all drones", voice: "dispatcher" });
   check("voice endpoint reports 'not configured' without a key", tts.status === 503);
+  const invalidTts = await post("/api/tts", { text: "Mayday", voice: "drone:-1", delivery: "shout" });
+  check("voice endpoint validates the role and delivery before generating", invalidTts.status === 400);
 
   // ---- 4. scenarios: save, replay exactly, challenge in every mode
   const saved = await (await post("/api/scenarios", { name: "Base cut + crash", author: "test", cfg: { ...world.initialCfg, maxTicks: 600, width: 9999 }, actions: world.judgeLog })).json();

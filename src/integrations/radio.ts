@@ -2,7 +2,7 @@
 // them are also spoken (see audio/voice.ts).
 import type { SimEvent } from "./events";
 import { actionLabel } from "./commands";
-import { ALERTS, alertClip, droneClip, droneLine, type Alert, type DroneCall } from "./lines";
+import { ALERTS, ALERT_DELIVERY, alertClip, droneClip, droneDelivery, droneLine, type Alert, type DroneCall } from "./lines";
 import type { Line } from "./audio/voice";
 
 type Kind = "base" | "drone" | "net" | "judge" | "alert" | "good" | "sys";
@@ -30,6 +30,9 @@ export class RadioLog {
 
   clear() {
     this.el.textContent = "";
+    this.lastRoutine = -Infinity;
+    this.lastAdded = null;
+    this.lastJudge = null;
   }
 
   /** Routine calls (refills, scouting) happen constantly: let one through every few seconds. */
@@ -58,12 +61,12 @@ export class RadioLog {
   private drone(e: { tick: number; id: number }, call: DroneCall, priority: number, extra = "") {
     const text = droneLine(e.id, call);
     this.add({ tick: e.tick, who: `D${e.id}`, kind: call === "crashed" ? "alert" : "drone", text: extra ? `${text} ${extra}` : text });
-    this.speak({ voice: `drone:${e.id}`, text, clip: droneClip(e.id, call), priority });
+    this.speak({ voice: `drone:${e.id}`, text, clip: droneClip(e.id, call), priority, delivery: droneDelivery(call), key: `drone-${e.id}` });
   }
 
   private alert(tick: number, a: Alert, kind: Kind) {
     this.add({ tick, who: "BASE", kind, text: ALERTS[a] });
-    this.speak({ voice: "dispatcher", text: ALERTS[a], clip: alertClip(a), priority: 3 });
+    this.speak({ voice: "dispatcher", text: ALERTS[a], clip: alertClip(a), priority: 3, delivery: ALERT_DELIVERY[a], key: a === "baseOnline" || a === "baseOffline" ? "base-link" : a === "villageLost" || a === "villageThreatened" ? "village" : a });
   }
 
   /** Turn one event into radio traffic. */
@@ -87,7 +90,7 @@ export class RadioLog {
         }
         break;
       case "droneCrashed":
-        this.drone(e, "crashed", 2, `(${e.cause === "fire" ? "fire damage" : e.cause === "battery" ? "battery flat" : "taken out by a judge"} at ${Math.round(e.x)}, ${Math.round(e.y)})`);
+        this.drone(e, "crashed", 4, `(${e.cause === "fire" ? "fire damage" : e.cause === "battery" ? "battery flat" : "taken out by a judge"} at ${Math.round(e.x)}, ${Math.round(e.y)})`);
         break;
       case "linkLost":
         if (e.scope === "all") this.drone(e, "lostLink", 1);
@@ -95,10 +98,11 @@ export class RadioLog {
         break;
       case "linkRegained":
         this.add({ tick: e.tick, who: "NET", kind: "net", text: e.scope === "all" ? `Drone ${e.id} is back in the network: maps and plans merged.` : `Drone ${e.id} is back in contact with base.` });
+        if (e.scope === "all" && this.routine()) this.drone(e, "rejoined", 1);
         break;
       case "networkSplit":
         this.add({ tick: e.tick, who: "NET", kind: "net", text: `Network split into ${e.groups} groups.` });
-        if (e.groups >= 4) this.speak({ voice: "dispatcher", text: ALERTS.networkSplit, clip: alertClip("networkSplit"), priority: 1 });
+        if (e.groups >= 4) this.speak({ voice: "dispatcher", text: ALERTS.networkSplit, clip: alertClip("networkSplit"), priority: 1, delivery: ALERT_DELIVERY.networkSplit, key: "network" });
         break;
       case "networkHealed":
         this.add({ tick: e.tick, who: "NET", kind: "good", text: `Network rejoined: ${e.groups} group${e.groups === 1 ? "" : "s"}.` });

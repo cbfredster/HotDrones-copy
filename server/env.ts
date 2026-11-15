@@ -8,6 +8,7 @@ const get = (k: string) => {
   const v = process.env[k]?.trim();
   return v ? v : undefined;
 };
+const droneVoices = (get("ELEVENLABS_DRONE_VOICES") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 
 export const env = {
   port: Number(get("PORT")) || 8787,
@@ -19,9 +20,9 @@ export const env = {
   elevenKey: get("ELEVENLABS_API_KEY"),
   elevenTtsModel: get("ELEVENLABS_TTS_MODEL") ?? "eleven_flash_v2_5",
   elevenSttModel: get("ELEVENLABS_STT_MODEL") ?? "scribe_v1",
-  /** Voice ids: dispatcher first, then the drone voices. Empty = use the first voices in the account. */
+  /** Empty selects a stable cast from voices included in the account. */
   elevenDispatcherVoice: get("ELEVENLABS_DISPATCHER_VOICE"),
-  elevenDroneVoices: (get("ELEVENLABS_DRONE_VOICES") ?? "").split(",").map((s) => s.trim()).filter(Boolean),
+  elevenDroneVoices: droneVoices,
   mongoUrl: get("MONGODB_URI"),
   mongoDb: get("MONGODB_DB") ?? "hotdrones",
 };
