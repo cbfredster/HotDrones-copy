@@ -223,69 +223,21 @@ header button { padding: 3px 9px; font-size: 12px; align-self: center; }
 .share a { color: var(--accent); }
 .share button { padding: 1px 7px; font-size: 11px; margin-left: 4px; }
 
-/* Opening screen: sky and clouds, the logo flies in, and flies out at the camera on Start. */
+/* Opening screen: the map is under cloud until the run starts. */
 .intro {
-  position: absolute; inset: 0; z-index: 6; pointer-events: none; overflow: hidden;
-  font-size: clamp(7px, 1.15vw, 13px); /* the logo is sized in em, so it scales with the stage */
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  z-index: 6; text-align: center; padding: 26px 34px 20px;
+  background: rgba(20, 26, 36, 0.55); backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  transition: opacity 0.5s ease, transform 0.5s ease;
 }
-.intro .logo {
-  position: absolute; left: 50%; top: 44%; width: 60em; height: 26em;
-  transform: translate(-50%, -50%); animation: logo-arrive 1.6s cubic-bezier(0.2, 0.8, 0.25, 1) both;
-}
-@keyframes logo-arrive { from { transform: translate(-50%, -50%) scale(0.15); opacity: 0; } to { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
-.logo-text {
-  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); margin: 0; white-space: nowrap;
-  font: 900 7.4em/1 "Arial Rounded MT Bold", "Nunito", "Trebuchet MS", system-ui, sans-serif; letter-spacing: 0.01em;
-  text-transform: none; color: #fff;
-  -webkit-text-stroke: 0.09em #1b2a3a; paint-order: stroke fill;
-  text-shadow: 0 0.08em 0 #1b2a3a, 0 0.2em 0.35em rgba(20, 40, 70, 0.35);
-}
-.logo-text span { color: var(--accent); }
-.hex-links { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-.hex-links polygon {
-  fill: none; stroke: #ffffff; stroke-dasharray: 2.4 1.6; vector-effect: non-scaling-stroke;
-  stroke-width: 4; stroke-linecap: round; filter: drop-shadow(0 0 3px #3fb6ff); animation: links-flow 1.4s linear infinite;
-}
-@keyframes links-flow { to { stroke-dashoffset: -3.6; } }
-.hex-drone {
-  position: absolute; width: 6em; height: 3.6em; transform: translate(-50%, -50%); overflow: visible;
-  filter: drop-shadow(0 0.25em 0.2em rgba(20, 40, 70, 0.3));
-  animation: drone-bob 2.2s ease-in-out var(--d) infinite alternate;
-}
-@keyframes drone-bob { from { margin-top: -0.35em; } to { margin-top: 0.35em; } }
-.intro .rotor { transform-box: fill-box; transform-origin: center; animation: rotor-spin 0.12s linear infinite alternate; }
-@keyframes rotor-spin { from { transform: scaleX(1); } to { transform: scaleX(0.25); } }
-.intro-start { position: absolute; left: 50%; top: 76%; transform: translateX(-50%); text-align: center; pointer-events: auto; transition: opacity 0.4s ease; }
-.intro-start button { font-size: 17px; padding: 10px 24px; box-shadow: 0 6px 20px rgba(20, 40, 70, 0.35); }
-.intro-start small { display: block; margin-top: 8px; color: #fff; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45); }
-
-/* Start: the title rushes past the camera and the drones peel away outwards. */
-.intro.launch .logo { animation: logo-flythrough 1.25s cubic-bezier(0.55, 0, 0.9, 0.45) forwards; }
-@keyframes logo-flythrough { from { transform: translate(-50%, -50%) scale(1); opacity: 1; } 70% { opacity: 1; } to { transform: translate(-50%, -50%) scale(9); opacity: 0; } }
-.intro.launch .hex-drone { animation: drone-away 1s ease-in forwards; }
-@keyframes drone-away { to { margin-left: calc(var(--dx) * 20em); margin-top: calc(var(--dy) * 20em); opacity: 0; } }
-.intro.launch .intro-start, .intro.launch .egg { opacity: 0; pointer-events: none; }
-
-/* The easter egg: a drone towing a DurHack banner across the sky every so often. */
-.egg {
-  position: absolute; top: 13%; left: 0; display: flex; flex-direction: row-reverse; align-items: center;
-  transform: translateX(-120%); animation: egg-fly 16s linear 1.8s infinite; transition: opacity 0.4s ease;
-}
-@keyframes egg-fly {
-  0% { transform: translateX(-30em); }
-  55% { transform: translateX(calc(100vw + 10em)); }
-  100% { transform: translateX(calc(100vw + 10em)); }
-}
-.egg-drone { width: 5em; height: 3em; overflow: visible; animation: drone-bob 0.9s ease-in-out infinite alternate; }
-.egg-rope { width: 4.5em; height: 2.2em; overflow: visible; margin: 0 -0.4em; }
-.egg-rope path { fill: none; stroke: #2b3442; stroke-width: 2; }
-.egg-banner {
-  padding: 0.35em 1em; font: 900 1.6em/1 "Arial Rounded MT Bold", "Trebuchet MS", system-ui, sans-serif;
-  color: #1b2a3a; background: #fff6e0; border: 0.12em solid #1b2a3a; border-radius: 0.2em 0.6em 0.6em 0.2em;
-  box-shadow: 0 0.2em 0.4em rgba(20, 40, 70, 0.3); transform-origin: right center; animation: banner-wave 0.7s ease-in-out infinite alternate;
-}
-@keyframes banner-wave { from { transform: skewY(-2deg) rotate(-1deg); } to { transform: skewY(2deg) rotate(1deg); } }
-
+.intro h2 { margin: 0 0 6px; font-size: 40px; letter-spacing: 0; text-transform: none; color: #fff; }
+.intro h2 span { color: var(--accent, #ff9f1c); }
+.intro p { margin: 0 0 18px; color: #e6e9ee; max-width: 340px; }
+.intro button { font-size: 17px; padding: 10px 22px; }
+.intro small { display: block; margin-top: 10px; color: #c3c8d0; }
+.intro.leaving { opacity: 0; transform: translate(-50%, -60%); pointer-events: none; }
 /* While clouded, hide everything that would give the map away. */
-#stage .iso-labels, #stage .minimap, #stage .transport, #stage #viewBadge, #stage .hud.top-right { transition: opacity 0.8s ease; }
-#stage.clouded .iso-labels, #stage.clouded .minimap, #stage.clouded .transport, #stage.clouded #viewBadge, #stage.clouded .hud.top-right { opacity: 0; pointer-events: none; }
+#stage .iso-labels, #stage .minimap, #stage .transport, #stage #viewBadge { transition: opacity 0.8s ease; }
+#stage.clouded .iso-labels, #stage.clouded .minimap, #stage.clouded .transport, #stage.clouded #viewBadge { opacity: 0; pointer-events: none; }

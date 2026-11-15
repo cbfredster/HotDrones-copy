@@ -8,7 +8,7 @@
 //   smoke.ts       smoke puffs                     drones.ts   quadcopters + labels
 //   particles.ts   water, steam, sparks            overlays.ts links, domes, selection
 //   picking.ts     pointer -> tile / drone      clouds.ts   opening cloud cover
-import { Color, Group, Vector3 } from "three";
+import { Group, Vector3 } from "three";
 import { BeliefMap } from "../../sim/belief";
 import { BASE_ID } from "../../sim/comms";
 import { Fire } from "../../sim/environment";
@@ -47,8 +47,6 @@ export interface PickResult {
 }
 
 const FOG_LEVELS = 7;
-const NIGHT = new Color(0x18222e); // the normal backdrop around the map
-const SKY = new Color(0x6fc3f2); // the opening sky
 const REGROW_STAGE_TICKS = 120; // regrown ground looks young for three stages of this length
 const FOG_TICKS = 300; // a tile this long unseen is as dark as it gets (same scale as the 2D view)
 
@@ -82,8 +80,6 @@ export class IsoRenderer {
   private readonly hover: HoverState = { tile: null, radius: 0 };
   private frameMs = 0;
   private cloudsWanted = false;
-  private readonly bg = new Color();
-  private mapHidden = false;
 
   constructor(container: HTMLElement, world: World) {
     this.stage = new IsoScene(container);
@@ -130,7 +126,6 @@ export class IsoRenderer {
     this.drones = new DroneLayer(world, this.terrain, this.particles, this.labelLayer, this.structures.padTopY);
     this.overlays = new OverlayLayer(world, this.terrain);
     this.clouds = new CloudLayer(this.terrain);
-    this.mapHidden = false; // fresh layers start visible
     if (this.cloudsWanted) this.clouds.cover(); // a new run before the intro was started stays covered
 
     this.root = new Group();
@@ -205,12 +200,11 @@ export class IsoRenderer {
     this.terrain.update(now);
     this.structures.update(now);
     this.fire.update(now, world.tick, source ? source.severity : world.env.severity);
-    this.smoke.update(now, view.showSmoke && !source && !this.mapHidden); // smoke is not part of a drone's fire map
+    this.smoke.update(now, view.showSmoke && !source); // smoke is not part of a drone's fire map
     this.drones.update(alpha, now, dt, this.cam, width, height, view.selected);
     this.particles.update(dt);
     this.overlays.update(view, this.hover, now, this.cam.unitsPerPixel(height), this.nodePos);
     this.clouds.update(dt, now);
-    this.applySky();
 
     this.stage.gl.render(this.stage.scene, this.cam.camera);
     this.frameMs += (performance.now() - t0 - this.frameMs) * 0.1;
@@ -300,31 +294,16 @@ export class IsoRenderer {
     return { x: this.drones.screenX[id], y: this.drones.screenY[id] };
   }
 
-  /** Hide the whole map under clouds in a blue sky (the opening screen). */
+  /** Hide the whole map under clouds (the opening screen). */
   coverWithClouds() {
     this.cloudsWanted = true;
     this.clouds.cover();
-    this.applySky();
   }
 
   /** Part the clouds over `seconds`, then call `done`. */
   clearClouds(seconds: number, done?: () => void) {
     this.cloudsWanted = false;
     this.clouds.clear(seconds, done);
-    this.applySky();
-  }
-
-  /** While covered only the sky and clouds are drawn; as they part the map appears and the sky darkens. */
-  private applySky() {
-    const covered = this.clouds.state === "covered";
-    if (covered !== this.mapHidden) {
-      // Only on a change: layers such as smoke manage their own visibility the rest of the time.
-      this.mapHidden = covered;
-      for (const child of this.root.children) if (child !== this.clouds.group) child.visible = !covered;
-    }
-    const k = this.clouds.progress;
-    const bg = this.stage.scene.background as Color;
-    bg.copy(this.bg.copy(SKY).lerp(NIGHT, k * k));
   }
 
   get cloudState(): CloudState {
