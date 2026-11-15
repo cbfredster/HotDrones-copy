@@ -1,6 +1,6 @@
 // All tunable numbers live here so the team can tweak behaviour in one place.
 
-export type Mode = "swarm" | "central" | "greedy";
+export type Mode = "swarm" | "central" | "greedy" | "cbba";
 
 export interface Config {
   seed: number;
@@ -74,6 +74,11 @@ export interface Config {
   stickiness: number; // bonus multiplier for keeping your current zone
   trackerParticles: number;
   trackerTimescale: number; // ticks after which a lost teammate's plan is mostly distrusted
+
+  // CBBA mode (src/sim/cbba.ts). Only read when mode is "cbba".
+  cbbaBundleSize: number; // zones a drone plans ahead: this load, then the next refills
+  cbbaHorizon: number; // ticks: a zone reached this much later is worth 1/e as much
+  cbbaRounds: number; // most build + consensus rounds per planning step
 }
 
 export const defaultConfig: Config = {
@@ -136,6 +141,10 @@ export const defaultConfig: Config = {
   stickiness: 1.25,
   trackerParticles: 40,
   trackerTimescale: 120,
+
+  cbbaBundleSize: 3,
+  cbbaHorizon: 90,
+  cbbaRounds: 6,
 };
 
 // Everything added since the original 2D version, switched off. With these overrides the

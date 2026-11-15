@@ -184,7 +184,7 @@ export class Commander {
     const judge = count("judgeAction");
     const out = r.extinguishedAt >= 0;
     return (
-      `${world.cfg.mode === "swarm" ? "The swarm" : world.cfg.mode === "central" ? "Central control" : "The uncoordinated drones"} ${out ? `put the fire out in ${r.extinguishedAt} ticks` : `did not put the fire out in ${r.ticks} ticks`}; ` +
+      `${world.cfg.mode === "swarm" ? "The swarm" : world.cfg.mode === "cbba" ? "The CBBA swarm" : world.cfg.mode === "central" ? "Central control" : "The uncoordinated drones"} ${out ? `put the fire out in ${r.extinguishedAt} ticks` : `did not put the fire out in ${r.ticks} ticks`}; ` +
       `${r.burnt} tiles burned and the village was ${r.villageLost ? "lost" : "saved"}. ` +
       `${r.dronesLost} of ${world.drones.length} drones were lost and ${r.waterDropped} loads of water were dropped. ` +
       `The network split ${count("networkSplit")} time${count("networkSplit") === 1 ? "" : "s"}, ${count("linkLost")} link losses were reported` +

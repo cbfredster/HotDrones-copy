@@ -1,4 +1,5 @@
 import { BeliefMap } from "./belief";
+import { CbbaState } from "./cbba";
 import { terrainHeightAt } from "./comms";
 import { Config } from "./config";
 import { Environment } from "./environment";
@@ -34,6 +35,7 @@ export class Drone {
   lastScores: { zone: number; score: number; taken: number }[] = [];
   waterDropped = 0;
   orders: { zone: number; tile: number } | null = null; // central mode only
+  cbba = new CbbaState(); // cbba mode only
   lostAt = -1;
   private visitedBaseForMaps = false;
 

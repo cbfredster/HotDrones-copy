@@ -139,6 +139,26 @@ When a drone stops hearing from a teammate, it creates 40 guesses (particles) at
 
 A recently lost teammate is trusted to still be doing its job. One silent for a long time, or possibly crashed, gradually stops counting, and the drone covers its zone itself. When contact returns, the cloud collapses back to the real position. Select a drone in the UI to see its clouds.
 
+### CBBA mode: planning several zones ahead
+
+Pick **CBBA (bundle auction)** in the Coordination menu. It runs the Consensus-Based Bundle Algorithm
+(Choi, Brunet & How, 2009) in `src/sim/cbba.ts`; the swarm mode above is unchanged.
+
+- **Tasks are zone slots:** a zone worth three drones is three tasks.
+- **Bundles:** each drone plans up to three zones ahead: the one for its current load of water, then the
+  ones after its next refills. It keeps adding the zone that improves its whole plan the most, scored with
+  time discounting (a zone reached later is worth less), so each addition bids less than the one before.
+- **Consensus:** drones that can reach each other agree on one winner per slot. A drone that is outbid on a
+  zone drops it and everything it planned after it, because those bids assumed the earlier zone. This repeats
+  until nothing changes.
+- **Out of contact:** a lost teammate's winning bid is discounted by time and by the particle filter's
+  confidence that it is still near that zone, exactly as in swarm mode, so its work gets picked up if it
+  crashed or wandered off.
+
+In a 12-seed check it burnt about 30% less than swarm mode (691 vs 980 tiles; village lost 2/12 vs 3/12), and
+held up the same way with poor comms and with the base offline. It costs about twice as much CPU per tick.
+Select a drone to see its plan and winning bids.
+
 ### Staying alive
 
 - **Battery** drains every tick, faster flying into a headwind or climbing. A drone heads home when it has just enough charge to make it back, with a safety margin.

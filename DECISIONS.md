@@ -208,3 +208,31 @@ recorded action log), which is the single write path the ground rules ask for.
   camera buttons) until the clouds have parted, because the layout is for the home view.
 - While fully covered, the map layers are not drawn (saves roughly 450k triangles) and the background is
   cloud-coloured, so any gap between puffs still reads as cloud. Both fade back as the clouds part.
+
+## Step 5 — CBBA mode
+
+- `cbba` is a fourth `Mode`; `swarm` is untouched. Algorithm in `src/sim/cbba.ts`, wired in `World.cbbaPlan()`
+  (every `decisionInterval` ticks, per connected group) and `World.decideCbba()` (fly the first zone in the
+  path). Settings: `cbbaBundleSize` 3, `cbbaHorizon` 90 ticks, `cbbaRounds` 6. Only read in `cbba` mode, so
+  `legacyConfig` needs no new entries; **the legacy check still passes (25/25 identical)**.
+- **Tasks are zone slots** (`zoneId#k`), each worth `value / slots`, slightly less for later slots. Zones come
+  from each drone's own belief map, so two drones can disagree about a zone's value; bids still compare.
+- **Path score:** time-discounted value, `value * exp(-t / cbbaHorizon)`, with one load per zone and a refill
+  detour before every zone after the first. Marginal gain at the best insertion point is the bid.
+- **Consensus in a connected group** (messages relay, so a group is one consensus domain, like map merging):
+  members are authoritative about their own bundles; hearsay about absent drones is passed on newest-first and
+  forgotten after 5 x `trackerTimescale`; an outbid drone releases that task and everything after it. Build
+  and consensus alternate until no bundle changes or `cbbaRounds` is reached.
+- **Out of contact:** an absent winner's bid is scaled by `exp(-age / trackerTimescale)` and the particle
+  filter's confidence that it is near the zone (the same rule as swarm mode). The trackers and heartbeats used
+  by swarm mode now also run in `cbba` mode.
+- **Empty bundle** (every slot held by a better bid): reinforce the zone with the best value per current holder,
+  rather than idling.
+- **Speed:** the best-water-source search scans every water tile, so detours are cached per planning step
+  (keyed on whole tiles). That made it ~10x faster with identical results: ~1.3 ms/tick average with 10 drones
+  (swarm: 0.7), worst tick ~10 ms even with 30 drones. Deterministic: same seed, same metrics.
+- **Experiments:** `npm run experiment` now includes `cbba` (not with `--legacy`). The Challenge board still
+  replays scenarios in the original three modes only.
+- **First numbers (12 seeds, current defaults):** CBBA 691 tiles burnt, village lost 2/12; swarm 980, 3/12;
+  central 2212, 9/12; greedy 1233, 6/12. Same ordering with comms range 6 and with the base offline at tick 120.
+- Not done: fire forecasting inside each drone (the optional half of step 5).

@@ -76,6 +76,12 @@ function droneHtml(world: World, id: number): string {
     ${
       world.cfg.mode === "central"
         ? `<p class="hint">Central mode: follows base's orders (${d.orders ? "zone " + d.orders.zone : "none"}).</p>`
+        : world.cfg.mode === "cbba"
+        ? `<table><tr><th>Plan</th><th>Zone</th><th>Winning bid</th></tr>${
+            d.cbba.path.map((id, k) => `<tr><td>${k === 0 ? "▶ now" : `then ${k + 1}`}</td><td>${id.replace("#", " slot ")}</td><td>${(d.cbba.table.get(id)?.bid ?? 0).toFixed(2)}</td></tr>`).join("") ||
+            `<tr><td colspan="3">No zone won: reinforcing the busiest one</td></tr>`
+          }</table>
+           <p class="hint">CBBA: each drone plans a bundle of zones (this load, then the next refills) and the swarm agrees on one winner per zone slot. Outbid on one zone, a drone drops it and everything planned after it.</p>`
         : `<table><tr><th>Zone</th><th>Bid</th><th>Already taken by</th></tr>${rows}</table>
            <p class="hint">"Already taken" counts teammates with better bids, plus a probability for out-of-contact teammates the drone thinks are still there.</p>`
     }`;

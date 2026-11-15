@@ -29,7 +29,8 @@ const WORKERS = flag("--workers") ? Math.max(1, Math.min(64, Number(option("--wo
 const DB = flag("--db");
 const DB_SAMPLE_EVERY = 10; // ticks between telemetry rows sent to the database
 const BASE_CFG: Partial<Config> = LEGACY ? legacyConfig : {};
-const MODES: Mode[] = ["swarm", "central", "greedy"];
+// CBBA is new since the 2D version, so the --legacy run (which must match BASIC/ exactly) leaves it out.
+const MODES: Mode[] = LEGACY ? ["swarm", "central", "greedy"] : ["swarm", "cbba", "central", "greedy"];
 const RANGES = [6, 8, 11, 14, 20, 30, 200];
 
 // ------------------------------------------------------------------ the sweep, as a list of jobs
@@ -176,8 +177,8 @@ const nd = summary.find((x) => x.experiment === "noDrones")!;
 console.log(`No drones: ${nd.burntMean.toFixed(0)} burnt, village lost ${(nd.villageLostRate * 100).toFixed(0)}%`);
 
 // ------------------------------------------------------------------ HTML report
-const COLOURS: Record<string, string> = { swarm: "#ff9f1c", central: "#4cc9f0", greedy: "#b388ff", none: "#9aa0a6" };
-const LABELS: Record<string, string> = { swarm: "Swarm (ours)", central: "Central control", greedy: "No coordination", none: "No drones" };
+const COLOURS: Record<string, string> = { swarm: "#ff9f1c", cbba: "#80ed99", central: "#4cc9f0", greedy: "#b388ff", none: "#9aa0a6" };
+const LABELS: Record<string, string> = { swarm: "Swarm (ours)", cbba: "CBBA (ours)", central: "Central control", greedy: "No coordination", none: "No drones" };
 
 function lineChart(metric: "burntMean" | "villageLostRate", title: string, yLabel: string, yMax: number) {
   const W = 640;

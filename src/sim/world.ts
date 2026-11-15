@@ -1,4 +1,5 @@
 import { BeliefMap, mergeGroup } from "./belief";
+import { cbbaGroup, taskId } from "./cbba";
 import { BASE_ID, BASE_MAST_HEIGHT, Blackout, CommsNode, Network, buildNetwork, terrainHeightAt, towerNodeId } from "./comms";
 import { Config, defaultConfig } from "./config";
 import { Drone } from "./drone";
@@ -115,8 +116,9 @@ export class World {
     this.networkNodes = this.commsNodes();
     this.network = buildNetwork(this.networkNodes, this.terrain, this.env, this.blackouts, c);
     this.shareInformation();
-    if (c.mode === "swarm") this.updateTrackers();
+    if (c.mode === "swarm" || c.mode === "cbba") this.updateTrackers();
     if (c.mode === "central" && this.tick % c.decisionInterval === 0) this.centralAssign();
+    if (c.mode === "cbba" && this.tick % c.decisionInterval === 0) this.cbbaPlan();
 
     this.zoneCache.clear();
     for (const d of this.drones) if (d.alive) this.act(d);
@@ -191,7 +193,7 @@ export class World {
       }
       mergeGroup(maps);
 
-      if (c.mode === "swarm") {
+      if (c.mode === "swarm" || c.mode === "cbba") {
         const members = comp.filter((id) => id >= 0).map((id) => this.drones[id]);
         // Heartbeat: each member republishes its plan with its current position.
         const merged = new Map<number, Claim>();
@@ -285,7 +287,7 @@ export class World {
       d.targetTile = wt;
       d.targetX = wt % env.w;
       d.targetY = Math.floor(wt / env.w);
-      if (c.mode === "swarm") this.publishClaim(d, d.myClaim(this.tick, d.claims.get(d.id)?.bid ?? 0));
+      if (c.mode === "swarm" || c.mode === "cbba") this.publishClaim(d, d.myClaim(this.tick, d.claims.get(d.id)?.bid ?? 0));
     }
     if (d.state === "toWater") {
       if (d.moveTowards(d.targetX, d.targetY, env, c)) d.state = "refilling";
@@ -316,6 +318,7 @@ export class World {
   private decide(d: Drone) {
     const mode = this.cfg.mode;
     if (mode === "central") return this.decideCentral(d);
+    if (mode === "cbba") return this.decideCbba(d);
     const zones = this.zonesFor(d);
     d.lastZones = zones;
     if (zones.length === 0) return this.noKnownFire(d);
@@ -403,7 +406,7 @@ export class World {
     d.targetX = best % this.env.w;
     d.targetY = Math.floor(best / this.env.w);
     d.state = "scouting";
-    if (this.cfg.mode === "swarm") this.publishClaim(d, d.myClaim(this.tick, 0));
+    if (this.cfg.mode === "swarm" || this.cfg.mode === "cbba") this.publishClaim(d, d.myClaim(this.tick, 0));
   }
 
   // ---------------------------------------------------------------- central baseline
@@ -467,6 +470,78 @@ export class World {
     // No valid orders: if base is reachable, wait for the next assignment; otherwise go home.
     if (this.inContact(d.id, BASE_ID)) d.state = "idle";
     else d.state = "toBase";
+  }
+
+  // ---------------------------------------------------------------- CBBA mode
+  // Every decision interval, each group of drones that can reach each other runs CBBA
+  // (src/sim/cbba.ts) to completion; a drone on its own plans with what it last heard.
+  private cbbaPlan() {
+    // Finding the best water source scans every water tile, and CBBA asks the same question
+    // many times while scoring plans, so answers are cached for this planning step (keyed on
+    // whole tiles, which is plenty for planning).
+    const w = this.env.w;
+    const water = new Map<number, number>();
+    const viaWater = (x: number, y: number, tx: number, ty: number) => {
+      const key = ((Math.round(x) * 128 + Math.round(y)) * 128 + Math.round(tx)) * 128 + Math.round(ty);
+      let d = water.get(key);
+      if (d === undefined) {
+        const wt = this.bestWaterTile(x, y, tx, ty);
+        const wx = wt % w;
+        const wy = Math.floor(wt / w);
+        d = Math.hypot(wx - x, wy - y) + Math.hypot(tx - wx, ty - wy);
+        water.set(key, d);
+      }
+      return d;
+    };
+    const zoneCache = new Map<Drone, Zone[]>();
+    const ctx = {
+      cfg: this.cfg,
+      tick: this.tick,
+      zonesOf: (d: Drone) => {
+        let z = zoneCache.get(d);
+        if (!z) zoneCache.set(d, (z = this.zonesFor(d)));
+        return z;
+      },
+      viaWater,
+    };
+    const bidding = (d: Drone) => d.alive && d.state !== "toBase" && d.state !== "charging";
+    for (const comp of this.network.components) {
+      const members = comp.filter((id) => id >= 0).map((id) => this.drones[id]);
+      if (members.length) cbbaGroup(ctx, members, bidding);
+    }
+  }
+
+  // Fly the first zone in my CBBA path. If my bundle is empty (every slot is held by a
+  // drone with a better bid), reinforce the zone that gains most from one more drone.
+  private decideCbba(d: Drone) {
+    const zones = this.zonesFor(d);
+    d.lastZones = zones;
+    if (zones.length === 0) return this.noKnownFire(d);
+    d.setVisitedBase(false);
+    const byId = new Map(zones.map((z) => [z.id, z]));
+    const st = d.cbba;
+    d.lastScores = st.path.map((id) => ({ zone: Number(id.split("#")[0]), score: st.table.get(id)?.bid ?? 0, taken: 0 }));
+
+    let chosen: Zone | undefined;
+    for (const id of st.path) {
+      chosen = byId.get(Number(id.split("#")[0]));
+      if (chosen) break;
+    }
+    if (!chosen) {
+      let best = -1;
+      for (const z of zones) {
+        let holders = 0;
+        for (let k = 0; k < z.slots; k++) if (st.table.has(taskId(z.id, k))) holders++;
+        const s = z.value / (this.timeToImpact(d, z) + 5) / (1 + holders);
+        if (s > best) {
+          best = s;
+          chosen = z;
+        }
+      }
+    }
+    if (!chosen) return this.noKnownFire(d);
+    this.assign(d, chosen);
+    this.publishClaim(d, d.myClaim(this.tick, st.table.get(st.path[0] ?? "")?.bid ?? 0));
   }
 
   // ---------------------------------------------------------------- helpers

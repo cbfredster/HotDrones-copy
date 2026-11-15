@@ -51,7 +51,7 @@ export class RunOverlays {
     $("endSub").textContent = out
       ? `The last fire went out ${m.extinguishedAt} ticks after the drones were called.`
       : `Still burning after ${m.tick} ticks (${m.burning} tiles alight).`;
-    const modeName = { swarm: "Swarm", central: "Central control", greedy: "No coordination" }[world.cfg.mode] ?? world.cfg.mode;
+    const modeName = ({ swarm: "Swarm", central: "Central control", greedy: "No coordination", cbba: "CBBA" } as Record<string, string>)[world.cfg.mode] ?? world.cfg.mode;
     $("endStats").innerHTML = `
       <span>Burnt area</span><b>${m.burnt} tiles (${((100 * m.burnt) / Math.max(1, flammable)).toFixed(0)}% of what could burn)</b>
       <span>Village</span>${m.villageLost ? `<b class="bad">lost at t=${m.villageLostAt}</b>` : `<b class="good">safe</b>`}
