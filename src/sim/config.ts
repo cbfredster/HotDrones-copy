@@ -99,7 +99,7 @@ export const defaultConfig: Config = {
 
   heightScale: 24,
 
-  spreadBase: 0.018,
+  spreadBase: 0.01,
   windStrength: 1.4,
   slopeStrength: 0.25,
   severityGrowth: 0.01,
@@ -167,6 +167,7 @@ export const defaultConfig: Config = {
 // sim is bit-for-bit the one in BASIC/ (`npm run experiment -- --legacy` proves it against
 // the committed BASIC/results/summary.csv). New behaviours must add their "off" value here.
 export const legacyConfig: Partial<Config> = {
+  spreadBase: 0.018, // the default was lowered to 0.01 (slower fire); the 2D version used 0.018
   smokeBlocksComms: false,
   smokeModel: "legacy",
   descentDrain: 0,
