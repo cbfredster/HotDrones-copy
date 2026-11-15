@@ -169,7 +169,7 @@ function startIntro() {
 }
 $("introStart").onclick = () => startIntro();
 
-let tps = 20;
+let tps = 10;
 function setTps(v: number) {
   tps = Math.max(MIN_TPS, Math.min(MAX_TPS, Math.round(v)));
   $("tpsVal").textContent = String(tps);
